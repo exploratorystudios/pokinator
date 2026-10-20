@@ -1,4 +1,4 @@
-import {Game} from './engine.js';
+import {Game, ENGINE_VERSION} from './engine.js?v=deduction-v3';
 import {ROSTER_SIZE, ROSTER_ID, REGIONS, filterRoster, validRoster} from './config.js';
 
 const $ = id => document.getElementById(id);
@@ -51,6 +51,7 @@ function start() {
 }
 
 function renderQuestion() {
+  if (game.hasConflict()) { renderConflict(); return; }
   const q = game.current;
   if (!q) { renderGuess(); return; }
   view('game');
@@ -62,6 +63,8 @@ function renderQuestion() {
   const top = game.ranking()[0].probability;
   $('mood').innerHTML = top > .5 ? 'Oh, I have<br>a theory.' : remaining < 20 ? 'Getting a little<br>suspicious…' : 'Let’s get a feel<br>for this one.';
   $('banter').textContent = game.history.at(-1)?.value === 0 ? 'A mystery within a mystery. No problem—I’ll try a different angle.' : top > .5 ? 'I am trying very hard not to look smug. Just one more detail…' : 'Picture your Pokémon’s original regional appearance. I’ll do the suspicious squinting.';
+  const generation = game.knownGeneration();
+  if (generation) $('banter').textContent += ` Debut region pinned down: ${['Kanto','Johto','Hoenn'][generation-1]}.`;
   $('question-panel').innerHTML = `<div class="question-number"><span>QUESTION ${String(game.history.length+1).padStart(2,'0')}</span><span class="question-spark" aria-hidden="true">✦</span></div>
     <h2 id="question-heading" tabindex="-1">${escape(q.text)}</h2>
     <details><summary>A little clarification?</summary><p>${escape(q.detail)}</p></details>
@@ -78,13 +81,14 @@ function renderQuestion() {
 function answer(value) {
   if (!game || !$('result').classList.contains('hidden') || $('game').classList.contains('hidden')) return;
   game.answer(value);
-  if (game.shouldGuess()) renderGuess(); else renderQuestion();
+  if (game.hasConflict()) renderConflict(); else if (game.shouldGuess()) renderGuess(); else renderQuestion();
 }
 
 function renderGuess() {
+  if (game.hasConflict()) { renderConflict(); return; }
   view('result');
   const informative = game.history.filter(h => h.value !== 0).length;
-  if (informative < 3) {
+  if (informative < 3 && game.remaining() > 1) {
     guessed = null;
     $('result').innerHTML = `<div class="eyebrow">THE MYSTERY REMAINS</div><h1>You’ve got me stumped.</h1><div class="success-stamp" aria-hidden="true">?</div><p class="result-subtitle">I need a few more clues than that to make a fair guess.<br>You can reveal your Pokémon, or give me another shot.</p><div class="result-actions"><button class="primary" id="reveal">Reveal my Pokémon <span>↗</span></button><button class="secondary" id="again">Try a new round</button></div>`;
   } else {
@@ -97,10 +101,18 @@ function renderGuess() {
   $('result').focus({preventScroll:true});
 }
 
+function renderConflict() {
+  guessed = null;
+  view('result');
+  $('result').innerHTML = `<div class="eyebrow">A CLUE NEEDS A SECOND LOOK</div><h1>Let’s revisit a clue.</h1><p class="result-subtitle">Your definite answers and ruled-out guesses leave no matching Pokémon.<br>You can edit any earlier answer, undo the last answer, or restore a rejected guess.</p><div class="result-actions"><button class="primary" id="review">Review or edit answers <span>↗</span></button>${game.history.length ? '<button class="secondary" id="conflict-undo">Undo last answer</button>' : ''}${game.rejected.length ? '<button class="secondary" id="restore-guess">Undo rejected guess</button>' : ''}</div><p><button class="text-button" id="reveal">Reveal my Pokémon instead ↗</button></p><p class="fine-print">Choose “Probably” or “Not sure” for a clue you’re uncertain about. Your other answers stay in place.</p>`;
+  $('result').setAttribute('tabindex','-1');
+  $('result').focus({preventScroll:true});
+}
+
 function storeRound(target, outcome) {
   if (finished) return;
   finished = true;
-  const round = {schema:1, roster:ROSTER_ID, region:gameRegion, engine:'bayes-v2', date:new Date().toISOString(), targetId:target.id, outcome, rejectedIds:[...game.rejected], answers:game.history.map(h => ({traitId:h.traitId,question:h.text,answer:h.value}))};
+  const round = {schema:1, roster:ROSTER_ID, region:gameRegion, engine:ENGINE_VERSION, date:new Date().toISOString(), targetId:target.id, outcome, rejectedIds:[...game.rejected], answers:game.history.map(h => ({traitId:h.traitId,question:h.text,answer:h.value}))};
   try {
     const old = JSON.parse(localStorage.getItem('pokinator-rounds') || '[]');
     const rounds = Array.isArray(old) ? old : [];
@@ -120,10 +132,6 @@ function complete(target, outcome) {
 function reject() {
   if (!guessed) return;
   game.reject(guessed.id);
-  if (game.rejected.length >= 3) {
-    openDex(true);
-    toast('Three theories fainted. Reveal your Pokémon, or close this to keep investigating.');
-  }
   renderQuestion();
 }
 
@@ -150,11 +158,11 @@ function openDex(select = false) {
 
 function showHistory() {
   if (!game?.history.length) { toast('Your answers will appear here once you make your first choice.'); return; }
-  modal('Following your train of thought.', `<p>${game.history.length} clues, one very mysterious Pokémon.</p><ol class="history-list">${game.history.map((h,i) => `<li>${i+1}. ${escape(h.text)}<strong>${answerNames[h.value]}</strong></li>`).join('')}</ol>`);
+  modal('Following your train of thought.', `<p>${game.history.length} clues, one very mysterious Pokémon.${finished ? '' : ' Edit any answer below; your other clues and rejected guesses stay in place.'}</p><ol class="history-list">${game.history.map((h,i) => `<li>${i+1}. ${escape(h.text)}${finished ? `<strong>${answerNames[h.value]}</strong>` : `<div><label class="fine-print" for="history-answer-${i}">Your answer</label> <select class="region-select" id="history-answer-${i}" data-history-index="${i}">${[1,-1,.5,-.5,0].map(value => `<option value="${value}" ${h.value===value ? 'selected' : ''}>${answerNames[value]}</option>`).join('')}</select></div>`}</li>`).join('')}</ol>`);
 }
 
 function showAbout(data = false) {
-  modal(data ? 'Behind the hunch.' : 'You think. I overthink.', data ? `<p>Pokinator starts with an equal chance for each Pokémon in your selected roster. Every answer updates those chances. It chooses useful clues, then gives them playful wording from a procedural template library.</p><p>This version uses a probability engine, not a trained neural network. Questions stay tied to explicit facts instead of invented lore.</p><h3>Your field notes stay here.</h3><p>Up to 200 completed rounds are saved in this browser only. Export them as labeled JSON for future training experiments. They are never sent to a server. Earlier Kanto rounds keep their original roster labels.</p><div class="modal-actions"><button class="secondary" id="export-data">Export my rounds ↓</button><button class="secondary" id="clear-data">Clear my rounds</button></div><p class="fine-print">Species metadata and pixel sprites: <a href="https://pokeapi.co/docs/v2" target="_blank" rel="noreferrer">PokéAPI</a> and <a href="https://github.com/PokeAPI/sprites" target="_blank" rel="noreferrer">PokéAPI sprites</a>. Curated visual clues are part of this fan project. Pokémon and character designs belong to their respective owners.</p>` : `<p>Choose any of the first 386 Pokémon, introduced in Gens 1–3, then keep it in your head. Play all three regions, or choose a species that debuted in Kanto, Johto, or Hoenn using the selector before you start.</p><h3>Five answers. No homework.</h3><p>“Yes” and “No” are strong clues. “Probably” and “Probably not” leave room for doubt. “Not sure” skips the clue entirely. You can undo an answer whenever you need to.</p><h3>The fine print, professor.</h3><p>Picture its original regional appearance. We use current types, so Fairy and Steel types count. Evolution ancestry includes later pre-evolutions. Alternate forms are not separate guesses: use standard Unown, normal Castform, and Normal Forme Deoxys. Each question has a little clarification if you need it.</p><p>If a guess misses, reject it to keep going—or reveal your Pokémon. Hunch strength is a score based on your answers, not a promise.</p><div class="modal-actions"><button class="primary" id="modal-play">I’ve got one in mind <span>↗</span></button></div>`);
+  modal(data ? 'Behind the hunch.' : 'You think. I overthink.', data ? `<p>Pokinator starts with an equal chance for each Pokémon in your selected roster. Definite Yes and No answers rule out incompatible candidates. Probably answers change their chances. The engine cross-references those clues and skips questions whose answers are already known, then adds playful procedural wording.</p><p>This version uses a probability engine, not a trained neural network. Questions stay tied to explicit facts instead of invented lore.</p><h3>Your field notes stay here.</h3><p>Up to 200 completed rounds are saved in this browser only. Export them as labeled JSON for future training experiments. They are never sent to a server. Earlier Kanto rounds keep their original roster labels.</p><div class="modal-actions"><button class="secondary" id="export-data">Export my rounds ↓</button><button class="secondary" id="clear-data">Clear my rounds</button></div><p class="fine-print">Species metadata and pixel sprites: <a href="https://pokeapi.co/docs/v2" target="_blank" rel="noreferrer">PokéAPI</a> and <a href="https://github.com/PokeAPI/sprites" target="_blank" rel="noreferrer">PokéAPI sprites</a>. Curated visual clues are part of this fan project. Pokémon and character designs belong to their respective owners.</p>` : `<p>Choose any of the first 386 Pokémon, introduced in Gens 1–3, then keep it in your head. Play all three regions, or choose a species that debuted in Kanto, Johto, or Hoenn using the selector before you start.</p><h3>Five answers. No homework.</h3><p>“Yes” and “No” rule out Pokémon that do not match. “Probably” and “Probably not” leave room for doubt—use them when a clue only sort of fits. “Not sure” skips the clue entirely. You can undo an answer, or edit any earlier clue in “Your answers.”</p><h3>The fine print, professor.</h3><p>Picture its original regional appearance. We use current types, so Fairy and Steel types count. Evolution ancestry includes later pre-evolutions. Alternate forms are not separate guesses: use standard Unown, normal Castform, and Normal Forme Deoxys. Each question has a little clarification if you need it.</p><p>If a guess misses, reject it to keep going with the same clues. If everyone matching those clues has been ruled out, review an answer or undo the rejected guess. Hunch strength is a score based on your answers, not a promise.</p><div class="modal-actions"><button class="primary" id="modal-play">I’ve got one in mind <span>↗</span></button></div>`);
 }
 
 startButton.addEventListener('click', start);
@@ -182,6 +190,8 @@ document.addEventListener('click', event => {
   if (button.id === 'incorrect') reject();
   if (button.id === 'reveal') openDex(true);
   if (button.id === 'review') showHistory();
+  if (button.id === 'conflict-undo') { game.back(); renderQuestion(); }
+  if (button.id === 'restore-guess') { game.restoreRejected(); if (game.shouldGuess()) renderGuess(); else renderQuestion(); }
   if (button.id === 'modal-play') { $('modal').close(); start(); }
   if (button.id === 'clear-data') {
     try { localStorage.removeItem('pokinator-rounds'); toast('Your locally saved rounds have been cleared.'); } catch { toast('Your browser could not clear its saved rounds.'); }
@@ -195,6 +205,13 @@ document.addEventListener('click', event => {
       setTimeout(() => URL.revokeObjectURL(url),1000);
     } catch { toast('Your browser could not export its saved rounds.'); }
   }
+});
+document.addEventListener('change', event => {
+  const index = event.target.dataset.historyIndex;
+  if (index === undefined || finished) return;
+  game.revise(Number(index),Number(event.target.value));
+  $('modal').close();
+  if (game.hasConflict()) renderConflict(); else if (game.shouldGuess()) renderGuess(); else renderQuestion();
 });
 document.addEventListener('keydown', event => {
   if (event.altKey || event.ctrlKey || event.metaKey || $('modal').open || $('game').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;

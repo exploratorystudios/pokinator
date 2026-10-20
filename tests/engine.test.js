@@ -110,10 +110,150 @@ test('a rejected guess stays rejected after undo while remaining guesses stay va
   const rejected = game.ranking()[0].pokemon.id;
   game.reject(rejected);
   assert.equal(game.ranking().find(r => r.pokemon.id===rejected).probability,0);
-  game.answer(0);
+  assert.ok(game.hasConflict(),'Rejecting the only matching candidate should request a clue review');
   game.back();
   assert.equal(game.ranking().find(r => r.pokemon.id===rejected).probability,0);
   assert.ok(game.ranking().every(r => Number.isFinite(r.probability)));
+});
+
+function give(game,id,value) {
+  const trait=game.traits.find(t=>t.id===id);
+  assert.ok(trait,`Missing clue ${id}`);
+  game.current={...trait,text:trait.lines[0]};
+  game.answer(value);
+}
+
+test('a confirmed region excludes other regions and stays known after a rejected guess', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'generation:1',1);
+  assert.equal(game.knownGeneration(),1);
+  assert.equal(game.remaining(),151);
+  assert.ok(game.ranking().filter(r=>r.probability>0).every(r=>r.pokemon.generation===1));
+  assert.ok(game.availableTraits().every(t=>t.group!=='generation'));
+  const history=structuredClone(game.history);
+  game.reject(25);
+  assert.deepEqual(game.history,history,'A rejected guess must keep all earlier answers');
+  assert.equal(game.knownGeneration(),1);
+  assert.equal(game.remaining(),150);
+  assert.ok(game.availableTraits().every(t=>t.group!=='generation'));
+  assert.equal(game.ranking().find(r=>r.pokemon.id===25).probability,0);
+});
+
+test('two negative region answers infer the third region without asking it', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'generation:1',-1);
+  give(game,'generation:2',-1);
+  assert.equal(game.knownGeneration(),3);
+  assert.equal(game.remaining(),135);
+  assert.ok(game.availableTraits().every(t=>t.group!=='generation'));
+  assert.ok(game.candidates.every(id=>id>=252));
+});
+
+test('a visual clue carries its region, type, and legendary implications into question selection', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'legend-bird',1);
+  assert.deepEqual(game.candidates,[144,145,146]);
+  assert.equal(game.knownGeneration(),1);
+  const options=game.availableTraits();
+  for(const settled of ['rare','bird','wings','type:flying','generation:1','generation:2','generation:3']) {
+    assert.ok(!options.some(t=>t.id===settled),`Repeated a settled implication: ${settled}`);
+  }
+  give(game,'type:ice',1);
+  assert.equal(game.ranking()[0].pokemon.name,'Articuno');
+  assert.equal(game.remaining(),1);
+  assert.equal(game.current,null);
+  assert.ok(game.shouldGuess());
+});
+
+test('evolution-family knowledge respects relatives introduced in different generations', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'family:pichu',1);
+  assert.deepEqual(game.candidates,[25,26,172]);
+  assert.equal(game.knownGeneration(),null,'Knowing a family must not incorrectly lock the debut region');
+  const options=game.availableTraits();
+  assert.ok(!options.some(t=>t.id==='generation:3'));
+  assert.ok(!options.some(t=>t.id==='type:electric'));
+  assert.ok(options.some(t=>t.group==='generation'));
+});
+
+test('equivalent clues and inverse questions are skipped even after a soft or unknown answer', () => {
+  for(const value of [0,.5]) {
+    const game=new Game(pokemon,{random:()=>.5});
+    give(game,'bagon',value);
+    assert.equal(game.remaining(),386,'Soft and unknown clues should leave alternatives possible');
+    assert.ok(!game.availableTraits().some(t=>t.id==='family:bagon'),'Rephrased family clue repeated');
+    game.reject(371);
+    assert.ok(!game.availableTraits().some(t=>t.id==='family:bagon'),'Rejected guess reopened a duplicate clue');
+  }
+  const pair=new Game(pokemon.filter(p=>[25,94].includes(p.id)),{random:()=>.5});
+  give(pair,'color:yellow',.5);
+  assert.ok(!pair.availableTraits().some(t=>t.id==='color:purple'),'Inverse of an answered question repeated');
+});
+
+test('revising a region updates every deduction without losing other answers or rejections', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'generation:1',-1);
+  give(game,'generation:2',-1);
+  game.reject(258);
+  game.revise(0,1);
+  assert.equal(game.knownGeneration(),1);
+  assert.equal(game.history[1].value,-1);
+  assert.deepEqual(game.rejected,[258]);
+  assert.equal(game.remaining(),151);
+  game.revise(0,0);
+  assert.equal(game.knownGeneration(),null);
+  assert.equal(game.remaining(),285);
+});
+
+test('conflicting answers produce a review state, and editing one recovers without a reset', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'type:fire',1);
+  give(game,'type:water',-1);
+  game.revise(1,1);
+  assert.ok(game.hasConflict());
+  assert.equal(game.remaining(),0);
+  assert.equal(game.current,null);
+  assert.equal(game.shouldGuess(),false);
+  assert.ok(game.ranking().every(r=>r.probability===0));
+  game.revise(1,.5);
+  assert.equal(game.hasConflict(),false);
+  assert.ok(game.ranking().filter(r=>r.probability>0).every(r=>r.pokemon.types.includes('fire')));
+  assert.equal(game.history.length,2);
+  assert.ok(Math.abs(game.ranking().reduce((s,r)=>s+r.probability,0)-1)<1e-10);
+});
+
+test('an accidentally rejected final candidate can be restored explicitly', () => {
+  const game=play(pokemon.find(p=>p.id===151));
+  game.reject(151);
+  assert.ok(game.hasConflict());
+  assert.equal(game.restoreRejected(),151);
+  assert.equal(game.hasConflict(),false);
+  assert.equal(game.ranking()[0].pokemon.id,151);
+  assert.ok(game.shouldGuess());
+});
+
+test('retry rounds can recover from mistaken soft clues without repeating binary facts', () => {
+  for(const id of [25,197,258,384,386]) {
+    const game=new Game(pokemon,{random:()=>.5});
+    let attempts=0, steps=0;
+    while(steps++<50) {
+      assert.equal(game.hasConflict(),false,'Soft mistakes must not eliminate the true target');
+      if(game.shouldGuess()) {
+        const guess=game.ranking()[0].pokemon.id;
+        if(guess===id)break;
+        const oldHistory=structuredClone(game.history);
+        game.reject(guess); attempts++;
+        assert.deepEqual(game.history,oldHistory);
+        continue;
+      }
+      const expected=game.current.members.has(id)?1:-1;
+      game.answer(game.history.length<3 ? -expected*.5 : expected);
+    }
+    assert.ok(steps<50,`Failed to recover ${id} after ${attempts} misses`);
+    assert.equal(game.ranking()[0].pokemon.id,id);
+    const facts=game.history.map(h=>game.traits.find(t=>t.id===h.traitId).key);
+    assert.equal(new Set(facts).size,facts.length,'A retry repeated the same binary fact');
+  }
 });
 
 test('question variation and soft answers retain a valid normalized distribution', () => {

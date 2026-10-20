@@ -108,7 +108,12 @@ export function buildTraits(pokemon) {
   const traits = [];
   const add = (id, group, lines, matches, detail, signature = false) => {
     const members = pokemon.filter(matches).map(p => p.id);
-    if (members.length && members.length < pokemon.length) traits.push({id, group, lines, members: new Set(members), detail, signature});
+    if (members.length && members.length < pokemon.length) {
+      const membership = new Set(members);
+      // A question and its inverse are the same binary fact, regardless of wording.
+      const key = splitKey(pokemon.map(p => p.id), membership);
+      traits.push({id, group, lines, members:membership, key, detail, signature});
+    }
   };
   for (const [type, lines] of Object.entries(typeLines)) add(`type:${type}`, 'type', lines, p => p.types.includes(type), `Count either of its official types. Use its original regional appearance with current typings.`);
   for (const color of Object.keys(colors)) add(`color:${color}`, 'color', [
@@ -147,28 +152,53 @@ export function buildTraits(pokemon) {
   return traits;
 }
 
+function splitKey(ids, members) {
+  const yes = [], no = [];
+  for (const id of ids) (members.has(id) ? yes : no).push(id);
+  const parts = [yes.sort((a,b)=>a-b).join(','), no.sort((a,b)=>a-b).join(',')];
+  return parts.sort().join('|');
+}
+
+export const ENGINE_VERSION = 'deduction-v3';
+
 export class Game {
   constructor(pokemon, {random = Math.random} = {}) {
     this.pokemon = pokemon;
     this.traits = buildTraits(pokemon);
+    this.traitById = new Map(this.traits.map(t => [t.id,t]));
     this.random = random;
     this.history = [];
     this.rejected = [];
     this.logs = new Map(pokemon.map(p => [p.id, 0]));
+    this.candidates = pokemon.map(p => p.id);
+    this.candidateIds = new Set(this.candidates);
     this.current = null;
     this.next();
   }
   ranking() {
-    const max = Math.max(...this.logs.values());
-    const weights = this.pokemon.map(p => ({pokemon:p, weight:Math.exp(this.logs.get(p.id) - max)}));
+    const max = Math.max(...this.candidates.map(id => this.logs.get(id)));
+    const weights = this.pokemon.map(p => ({pokemon:p, weight:this.candidateIds.has(p.id) ? Math.exp(this.logs.get(p.id) - max) : 0}));
     const total = weights.reduce((s,p) => s + p.weight, 0);
-    return weights.map(p => ({pokemon:p.pokemon, probability:p.weight/total})).sort((a,b) => b.probability-a.probability);
+    return weights.map(p => ({pokemon:p.pokemon, probability:total ? p.weight/total : 0})).sort((a,b) => b.probability-a.probability);
+  }
+  availableTraits() {
+    if (this.candidates.length < 2) return [];
+    const asked = new Set(this.history.map(h => h.traitId));
+    const askedFacts = new Set(this.history.map(h => this.traitById.get(h.traitId).key));
+    // Compare questions on the remaining candidates too. Two different clues
+    // can become equivalent after an elimination or a rejected guess.
+    const askedSplits = new Set(this.history.map(h => splitKey(this.candidates,this.traitById.get(h.traitId).members)));
+    return this.traits.filter(trait => {
+      if (asked.has(trait.id) || askedFacts.has(trait.key)) return false;
+      const yes = this.candidates.reduce((count,id) => count + Number(trait.members.has(id)),0);
+      if (!yes || yes === this.candidates.length) return false;
+      return !askedSplits.has(splitKey(this.candidates,trait.members));
+    });
   }
   next() {
     const ranking = this.ranking();
-    const asked = new Set(this.history.map(h => h.traitId));
     const lastGroup = this.history.at(-1)?.group;
-    const options = this.traits.filter(t => !asked.has(t.id)).map(trait => {
+    const options = this.availableTraits().map(trait => {
       const mass = ranking.reduce((s,r) => s + (trait.members.has(r.pokemon.id) ? r.probability : 0), 0);
       let gain = mass > 0 && mass < 1 ? -mass*Math.log2(mass)-(1-mass)*Math.log2(1-mass) : 0;
       if (trait.group === 'category') gain *= this.history.length < 6 ? 0.08 : 0.52;
@@ -186,7 +216,7 @@ export class Game {
     if (![-1,-.5,0,.5,1].includes(value) || !this.current) throw new Error('Invalid answer');
     const t = this.current;
     this.history.push({traitId:t.id, group:t.group, text:t.text, value});
-    this.apply(t, value);
+    this.rebuild();
     this.next();
   }
   apply(trait, value) {
@@ -200,21 +230,55 @@ export class Game {
   back() {
     if (!this.history.length) return;
     const last = this.history.pop();
-    this.logs = new Map(this.pokemon.map(p => [p.id, this.rejected.includes(p.id) ? -Infinity : 0]));
-    for (const h of this.history) this.apply(this.traits.find(t => t.id === h.traitId), h.value);
-    this.current = {...this.traits.find(t => t.id === last.traitId), text:last.text};
+    this.rebuild();
+    this.current = {...this.traitById.get(last.traitId), text:last.text};
   }
-  reject(id) {
-    this.rejected.push(id);
-    this.logs.set(id, -Infinity);
+  rebuild() {
+    this.logs = new Map(this.pokemon.map(p => [p.id,0]));
+    let candidates = this.pokemon.map(p => p.id).filter(id => !this.rejected.includes(id));
+    for (const h of this.history) {
+      const trait = this.traitById.get(h.traitId);
+      // Definite answers are constraints. This carries every implication across
+      // regions, types, families, appearances, and the rest of the fact bank.
+      // Probably answers only change the ranking; unknown answers stay neutral.
+      if (Math.abs(h.value) === 1) candidates = candidates.filter(id => trait.members.has(id) === (h.value > 0));
+      this.apply(trait,h.value);
+    }
+    this.candidates = candidates;
+    this.candidateIds = new Set(candidates);
+  }
+  revise(index,value) {
+    if (!Number.isInteger(index) || !this.history[index] || ![-1,-.5,0,.5,1].includes(value)) throw new Error('Invalid answer revision');
+    this.history[index] = {...this.history[index],value};
+    this.rebuild();
     this.next();
   }
+  reject(id) {
+    if (!this.pokemon.some(p => p.id === id) || this.rejected.includes(id)) throw new Error('Invalid rejected guess');
+    this.rejected.push(id);
+    this.rebuild();
+    this.next();
+  }
+  restoreRejected() {
+    if (!this.rejected.length) return;
+    const id = this.rejected.pop();
+    this.rebuild();
+    this.next();
+    return id;
+  }
+  hasConflict() {
+    return this.candidates.length === 0;
+  }
+  knownGeneration() {
+    const generations = new Set(this.pokemon.filter(p => this.candidateIds.has(p.id)).map(p => p.generation));
+    return generations.size === 1 ? [...generations][0] : null;
+  }
   shouldGuess() {
+    if (this.hasConflict()) return false;
     const informative = this.history.filter(h => h.value !== 0).length;
-    return (informative >= 5 && this.ranking()[0].probability >= .88) || this.history.length >= 20 + this.rejected.length*5 || !this.current;
+    return this.candidates.length === 1 || (informative >= 5 && this.ranking()[0].probability >= .88) || this.history.length >= 20 + this.rejected.length*5 || !this.current;
   }
   remaining() {
-    const ranking = this.ranking();
-    return ranking.filter(r => r.probability >= ranking[0].probability/15).length;
+    return this.candidates.length;
   }
 }
