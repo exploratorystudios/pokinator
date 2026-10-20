@@ -1,5 +1,7 @@
 # Pokinator
 
+[Play Pokinator online](https://exploratorystudios.github.io/pokinator/)
+
 A static Pokémon guessing game covering all 386 species introduced in Gens 1–3. Play all regions or filter to species that debuted in Kanto (151), Johto (100), or Hoenn (135). Fact-bound procedural questions use Bayesian updates and information gain; this is not a trained neural model.
 
 ```sh
