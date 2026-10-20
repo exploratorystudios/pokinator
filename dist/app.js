@@ -61,7 +61,7 @@ function renderQuestion() {
   $('remaining').textContent = remaining;
   $('meter-fill').style.width = `${Math.max(3,remaining/game.pokemon.length*100)}%`;
   const top = game.ranking()[0].probability;
-  $('mood').innerHTML = top > .5 ? 'Oh, I have<br>a theory.' : remaining < 20 ? 'Getting a little<br>suspicious…' : 'Let’s get a feel<br>for this one.';
+  $('mood').innerHTML = top > .5 ? 'Oh, I have <br>a theory.' : remaining < 20 ? 'Getting a little <br>suspicious…' : 'Let’s get a feel <br>for this one.';
   $('banter').textContent = game.history.at(-1)?.value === 0 ? 'A mystery within a mystery. No problem—I’ll try a different angle.' : top > .5 ? 'I am trying very hard not to look smug. Just one more detail…' : 'Picture your Pokémon’s original regional appearance. I’ll do the suspicious squinting.';
   const generation = game.knownGeneration();
   if (generation) $('banter').textContent += ` Debut region pinned down: ${['Kanto','Johto','Hoenn'][generation-1]}.`;
