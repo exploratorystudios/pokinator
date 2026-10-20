@@ -1,5 +1,7 @@
 // Fact selection and question phrasing are separate so a learned policy can replace
 // the information-gain policy later without changing the UI or truth labels.
+import {extendedMembers, newSignatures} from './clues.js';
+
 const typeLines = {
   grass: ['Does it bring its own greenery wherever it goes?', 'Is it part Grass type—basically a houseplant with opinions?'],
   fire: ['Is it Fire type, with all the insurance problems that implies?', 'Would its Fire typing make a sprinkler system nervous?'],
@@ -18,6 +20,7 @@ const typeLines = {
   dragon: ['Is it actually Dragon type? Looking like a dragon does not count.', 'Does Dragon appear in its typing? I checked the fine print.'],
   fairy: ['Is it Fairy type, with suspiciously magical energy?', 'Does it have Fairy typing? Cute can still be dangerous.'],
   steel: ['Is it Steel type—a potential problem for airport security?', 'Does Steel appear in its typing? That explains the clanking.'],
+  dark: ['Is it Dark type, and perhaps enjoying this mysterious business a little too much?', 'Does it have Dark typing? Very on-brand for a secret identity.'],
 };
 
 // Explicit membership keeps playful metaphors grounded in observable features.
@@ -31,35 +34,35 @@ const signatures = [
   ['cocoon', [11,14], 'Is it in its “please do not disturb, becoming fabulous” cocoon era?', 'Does it look like a cocoon waiting for a dramatic makeover?'],
   ['caterpillar', [10,13], 'Is it a little caterpillar-shaped creature crawling toward its glow-up?', 'Does it have that tiny, crawling caterpillar look?'],
   ['stingers', [13,14,15], 'Is a pointy stinger part of its personal space policy?', 'Does its bug-like body come with a very obvious stinger?'],
-  ['bird', [16,17,18,21,22,83,84,85,144,145,146], 'Is it clearly bird-shaped, feathers and all?', 'Would you put it in the “definitely a bird” section of the field guide?'],
+  ['bird', [16,17,18,21,22,83,84,85,144,145,146], 'Does it have a clearly bird-like body? An unusual birdwatching trip awaits.', 'Would you put it in the “definitely a bird” section of the field guide?'],
   ['scruffy-bird', [21], 'Is it a small, scruffy brown bird with short reddish wings?', 'Does this little bird have reddish wings and a distinctly scruffy brown head?'],
-  ['rodent', [19,20,25,26,27,28], 'Does it have that little rodent look—mouse, rat, or shrew?', 'Would “suspiciously powerful rodent” fit its general appearance?'],
+  ['rat', [19,20], 'Is it a purple rat or its chunky brown evolution? I am hiding the cheese.', 'Does it belong to Rattata’s family of unusually formidable rats?'],
   ['snake', [23,24], 'Is it basically a snake with a battle career?', 'Does it slither around looking unmistakably like a snake?'],
   ['cobra', [24], 'Does it spread a cobra hood with a face-like pattern?', 'Is that a threatening face pattern on its cobra hood?'],
   ['cheeks', [25,26], 'Are those electric cheek pouches, or is it just happy to shock me?', 'Does it store electricity in those very recognizable cheeks?'],
-  ['lightning-tail', [25], 'Is its tail shaped like a lightning bolt? Subtle branding.', 'Does it advertise its electricity with a lightning-bolt tail?'],
-  ['horn', [29,31,32,33,34,77,78,86,87,111,112,118,119], 'Does it have a noticeable horn on its forehead or nose?', 'Would the horn on its head make a headbutt especially concerning?'],
+  ['lightning-tail', [25,26], 'Does its tail have a lightning-bolt shape, either along it or at the tip?', 'Does it advertise its electricity with a lightning-bolt-shaped tail or tail tip?'],
+  ['rhino', [111,112], 'Does it look like a gray rhinoceros with a drilling career?', 'Is it a gray, rhinoceros-like creature with a drill-shaped horn on its nose?'],
   ['moon', [35,36], 'Is it one of those pink, pointy-eared moon fairies with a curled tail?', 'Does it have that pink moon-fairy look, complete with a little curled tail?'],
   ['many-tails', [37,38], 'Does this fox have considerably more than one fluffy tail?', 'Is its fox-like tail situation getting seriously out of hand?'],
   ['sing', [39,40], 'Is it a round pink singer with a curl on its forehead?', 'Does it look like a pink singing balloon with a little forehead curl?'],
   ['bat', [41,42], 'Does it look like a bat who found the wrong cave exit?', 'Is it distinctly bat-shaped? I will keep the lights down.'],
   ['mushroom', [46,47], 'Are there mushrooms growing on its back? That seems personal.', 'Is its crab-like body carrying a mushroom problem?'],
-  ['cat', [52,53], 'Is it recognizably a cat, complete with whiskers?', 'Would you describe it as a cat with battle privileges?'],
+  ['cat', [52,53], 'Is it a housecat-like Pokémon from the Meowth or Skitty family?', 'Does it belong to Meowth’s or Skitty’s family? I am sensing feline mischief.'],
   ['coin', [52], 'Does it wear a gold coin on its forehead like it owns the place?', 'Is that a coin on its forehead? Very committed to the brand.'],
-  ['duck', [54,55], 'Does it look like a duck who has had a long day?', 'Is this one distinctly duck-shaped?'],
+  ['duck', [54,55,83], 'Does it look like a duck who has had a long day?', 'Is this one distinctly duck-shaped?'],
   ['headache', [54], 'Is it a yellow duck clutching its head like Monday never ended?', 'Does this yellow duck look like it has a permanent headache?'],
   ['pig-monkey', [56,57], 'Is it a furry monkey with a pig-like snout and anger issues?', 'Does a pig snout on a very angry monkey sound familiar?'],
   ['fire-dog', [58,59], 'Is it a fluffy orange canine with bold black stripes?', 'Does this dog have orange fur and black tiger-like stripes?'],
   ['swirl', [60,61,62], 'Is there a very obvious spiral drawn on its belly?', 'Does its belly come with a built-in hypnotic swirl?'],
   ['spoons', [64,65], 'Has it brought a spoon—or two—to a psychic fight?', 'Does it insist on carrying silverware for psychic business?'],
-  ['four-arms', [68], 'Does it have four arms? That is an unfair advantage at high-fives.', 'Would counting its arms get you all the way to four?'],
+  ['four-arms', [68], 'Is it a gray, muscular fighter with four arms? Unfair at high-fives.', 'Would counting this gray bodybuilder’s arms get you all the way to four?'],
   ['belt', [67,68], 'Is it a muscular gray fighter wearing a championship-style belt?', 'Did this gray bodybuilder accessorize with a big belt?'],
   ['jellyfish', [72,73], 'Is it a jellyfish with red gems on its head?', 'Does this jellyfish come with dramatic red head ornaments?'],
-  ['rock-arms', [74,75,76], 'Is it a rocky creature with two hefty arms and a grumpy face?', 'Does it look like a rock decided to grow arms and fight?'],
+  ['rock-arms', [74,75,76], 'Is it in Geodude’s family of grumpy, arm-waving rocks?', 'Does it look like Geodude or one of its increasingly hefty rock relatives?'],
   ['fire-horse', [77,78], 'Is it a horse whose mane is an actual fire hazard?', 'Does this horse have flames where a mane should be?'],
   ['slow', [79,80], 'Is it a pink, wonderfully vacant-looking creature with a long tail?', 'Does it have a pink body, a long tail, and a very vacant stare?'],
   ['magnet', [81,82], 'Does it have magnets attached to a metal ball-shaped body?', 'Is it made of metal spheres with magnets sticking out?'],
-  ['multiple-heads', [82,84,85,102,103,110], 'Does more than one face want a say in this conversation?', 'Does this Pokémon have multiple heads or faces on one connected body?'],
+  ['multiple-heads', [82,84,85,102,103,110], 'Does this Pokémon have more than one head or face sharing its identity?', 'Does it consist of multiple visible heads or faces, either connected or grouped together?'],
   ['sludge', [88,89], 'Is it essentially a living pile of purple sludge?', 'Does its whole body look like purple sludge with opinions?'],
   ['shell', [90,91], 'Is it a purple shellfish with a face peeking out?', 'Does a purple clamshell dominate its entire look?'],
   ['haunt', [92,93,94], 'Is it a purple, mischievous ghost with an enormous grin?', 'Does it have that purple prankster-ghost look?'],
@@ -107,16 +110,35 @@ export function buildTraits(pokemon) {
     const members = pokemon.filter(matches).map(p => p.id);
     if (members.length && members.length < pokemon.length) traits.push({id, group, lines, members: new Set(members), detail, signature});
   };
-  for (const [type, lines] of Object.entries(typeLines)) add(`type:${type}`, 'type', lines, p => p.types.includes(type), `Count either of its official types. Use standard Kanto forms with current typings.`);
+  for (const [type, lines] of Object.entries(typeLines)) add(`type:${type}`, 'type', lines, p => p.types.includes(type), `Count either of its official types. Use its original regional appearance with current typings.`);
   for (const color of Object.keys(colors)) add(`color:${color}`, 'color', [
     `Would ${color} be the main crayon you reach for to draw it?`,
     `Is its main body color ${color}? I am mentally assembling a very suspicious portrait.`,
   ], p => p.color === color, 'Think of its usual appearance, not a shiny version. Pokédex color categories can be broad.');
-  for (const [id, members, ...lines] of signatures) add(id, 'appearance', lines, p => members.includes(p.id), 'Think of its usual Kanto form. Choose “Not sure” if this detail is unfamiliar.', true);
-  add('evolved', 'evolution', ['Has it already evolved from another Pokémon? Someone has had a glow-up.', 'Is it an evolved form? I am checking for a previous identity.'], p => Boolean(p.evolvesFrom), 'Includes pre-evolutions introduced after Kanto, such as Pichu.');
+  for (const [id, members, ...lines] of [...signatures, ...newSignatures]) {
+    const ids = new Set([...members, ...(extendedMembers[id] || [])]);
+    add(id, 'appearance', lines, p => ids.has(p.id), 'Think of its original regional appearance, not a shiny, Mega, or alternate form. “Not sure” is fine.', true);
+  }
+  add('evolved', 'evolution', ['Has it already evolved from another Pokémon? Someone has had a glow-up.', 'Is it an evolved form? I am checking for a previous identity.'], p => Boolean(p.evolvesFrom), 'Includes later pre-evolutions, such as Pichu for Pikachu and Budew for Roselia.');
   const parents = new Set(pokemon.map(p => p.evolvesFrom));
-  add('can-evolve', 'evolution', ['Can it evolve into another of the original 151? Its story is not over yet.', 'Does it still have an evolution waiting within the original 151?'], p => parents.has(p.slug), 'Only count evolutions within the original 151 for this question.');
-  add('rare', 'legend', ['Is it Legendary or Mythical? A suspiciously exclusive guest list.', 'Does it belong to the Legendary or Mythical club?'], p => p.legendary || p.mythical, 'Kanto’s legendary birds, Mewtwo, and Mew count.');
+  add('can-evolve', 'evolution', ['Can it evolve into another Pokémon introduced in Gens 1–3? Its story is not over yet.', 'Does it still have an evolution waiting among the first 386 Pokémon?'], p => p.evolvesWithinRoster ?? parents.has(p.slug), 'Count any evolution introduced in Gens 1–3, even outside your selected region. Later evolutions such as Sylveon do not count.');
+  add('rare', 'legend', ['Is it Legendary or Mythical? A suspiciously exclusive guest list.', 'Does it belong to the Legendary or Mythical club?'], p => p.legendary || p.mythical, 'Includes legendary birds, beasts, the Regis, the weather trio, and Mythical Pokémon such as Mew, Celebi, Jirachi, and Deoxys.');
+  const regions = [[1,'Kanto','the Red and Blue era'],[2,'Johto','the Gold and Silver era'],[3,'Hoenn','the Ruby and Sapphire era']];
+  for (const [generation,region,era] of regions) add(`generation:${generation}`, 'generation', [
+    `Did it make its grand entrance in ${region}, back in ${era}?`,
+    `Was this Pokémon first introduced in ${region}’s generation? I am dating its debut, not its trainer.`,
+  ], p => p.generation === generation, `Think of the generation that introduced the species, not every region where it can be caught. ${region} is Gen ${generation}.`);
+  const bySlug = new Map(pokemon.map(p => [p.slug,p]));
+  const familyRoot = p => { const visited = new Set(); while (bySlug.has(p.evolvesFrom) && !visited.has(p.id)) { visited.add(p.id); p = bySlug.get(p.evolvesFrom); } return p; };
+  for (const root of new Map(pokemon.map(p => { const r = familyRoot(p); return [r.id,r]; })).values()) {
+    // Family membership is useful when relatives look quite different. Singles
+    // rely on visual clues and official categories rather than naming a guess.
+    if (pokemon.filter(p => familyRoot(p).id === root.id).length < 2) continue;
+    add(`family:${root.slug}`, 'family', [
+      `Is it ${root.name} or one of its evolution relatives? I recognize a family resemblance.`,
+      `Does it share an evolution family with ${root.name}? Something about the family portrait is familiar.`,
+    ], p => familyRoot(p).id === root.id, `Count every evolution branch and pre-evolution in the ${root.name} family, including ${root.name} itself.`);
+  }
   // Official categories are a useful late fallback, never a made-up physical fact.
   for (const genus of new Set(pokemon.map(p => p.genus))) add(`category:${genus}`, 'category', [
     `Does the Pokédex call it the “${genus}”? That label feels like a clue.`,
@@ -150,6 +172,8 @@ export class Game {
       const mass = ranking.reduce((s,r) => s + (trait.members.has(r.pokemon.id) ? r.probability : 0), 0);
       let gain = mass > 0 && mass < 1 ? -mass*Math.log2(mass)-(1-mass)*Math.log2(1-mass) : 0;
       if (trait.group === 'category') gain *= this.history.length < 6 ? 0.08 : 0.52;
+      if (trait.group === 'family') gain *= .8;
+      if (trait.group === 'generation') gain *= this.history.length < 3 ? .55 : .9;
       if (trait.signature) gain *= 1.15 + Math.min(0.3, ranking[0].probability);
       if (trait.group === lastGroup && trait.group !== 'appearance') gain *= .7;
       return {trait, score:gain*(.94+this.random()*.12)};

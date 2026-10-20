@@ -1,4 +1,4 @@
-"""Refresh the cached Kanto dataset. Runtime gameplay needs no external requests."""
+"""Refresh cached species #001–386. Runtime gameplay needs no external requests."""
 import concurrent.futures
 import json
 from pathlib import Path
@@ -8,6 +8,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / '.cache'
 CACHE.mkdir(exist_ok=True)
+GENERATION_LIMIT = 386
 
 def download(url, target):
     if target.exists():
@@ -33,7 +34,8 @@ def fetch(number):
     name = next(n['name'] for n in s['names'] if n['language']['name'] == 'en')
     genus = next(n['genus'] for n in s['genera'] if n['language']['name'] == 'en')
     download(p['sprites']['front_default'], ROOT / 'dist' / 'assets' / 'pokemon' / f'{number}.png')
-    return dict(id=number, name=name, slug=p['name'], types=[t['type']['name'] for t in p['types']],
+    generation = {'generation-i': 1, 'generation-ii': 2, 'generation-iii': 3}[s['generation']['name']]
+    return dict(id=number, name=name, slug=s['name'], generation=generation, types=[t['type']['name'] for t in p['types']],
                 color=s['color']['name'], shape=s['shape']['name'],
                 habitat=s['habitat']['name'] if s['habitat'] else None,
                 genus=genus, evolvesFrom=s['evolves_from_species']['name'] if s['evolves_from_species'] else None,
@@ -42,6 +44,12 @@ def fetch(number):
                 height=p['height'], weight=p['weight'])
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-    data = sorted(pool.map(fetch, range(1, 152)), key=lambda p: p['id'])
-(ROOT / 'dist' / 'pokemon.json').write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n')
+    data = sorted(pool.map(fetch, range(1, GENERATION_LIMIT + 1)), key=lambda p: p['id'])
+parents = {p['evolvesFrom'] for p in data if p['evolvesFrom']}
+for p in data:
+    p['evolvesWithinRoster'] = p['slug'] in parents
+target = ROOT / 'dist' / 'pokemon.json'
+temporary = target.with_suffix('.json.tmp')
+temporary.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n')
+temporary.replace(target)
 print(f'Cached {len(data)} Pokémon and sprites.')

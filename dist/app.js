@@ -1,9 +1,11 @@
 import {Game} from './engine.js';
+import {ROSTER_SIZE, ROSTER_ID, REGIONS, filterRoster, validRoster} from './config.js';
 
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const answerNames = {'1':'Yes','.5':'Probably','0':'Not sure','-0.5':'Probably not','-1':'No','0.5':'Probably'};
 let pokemon = [], game = null, guessed = null, finished = false, toastTimer;
+let gameRegion = 'all';
 const startButton = $('start');
 startButton.disabled = true;
 startButton.innerHTML = 'Warming up… <span>✦</span>';
@@ -13,7 +15,7 @@ async function load() {
     const response = await fetch('./pokemon.json');
     if (!response.ok) throw new Error(`Dataset request failed: ${response.status}`);
     const data = await response.json();
-    if (!Array.isArray(data) || data.length !== 151 || data.some(p => !p.name || !p.types || !p.id)) throw new Error('Incomplete dataset');
+    if (!validRoster(data)) throw new Error('Incomplete dataset');
     pokemon = data;
     startButton.disabled = false;
     startButton.innerHTML = 'Let’s play <span>↗</span>';
@@ -39,7 +41,8 @@ function view(name) {
 
 function start() {
   if (!pokemon.length) { load(); return; }
-  game = new Game(pokemon);
+  gameRegion = $('region').value;
+  game = new Game(filterRoster(pokemon, gameRegion));
   guessed = null;
   finished = false;
   view('game');
@@ -55,10 +58,10 @@ function renderQuestion() {
   $('undo').disabled = !game.history.length;
   const remaining = game.remaining();
   $('remaining').textContent = remaining;
-  $('meter-fill').style.width = `${Math.max(3,remaining/151*100)}%`;
+  $('meter-fill').style.width = `${Math.max(3,remaining/game.pokemon.length*100)}%`;
   const top = game.ranking()[0].probability;
   $('mood').innerHTML = top > .5 ? 'Oh, I have<br>a theory.' : remaining < 20 ? 'Getting a little<br>suspicious…' : 'Let’s get a feel<br>for this one.';
-  $('banter').textContent = game.history.at(-1)?.value === 0 ? 'A mystery within a mystery. No problem—I’ll try a different angle.' : top > .5 ? 'I am trying very hard not to look smug. Just one more detail…' : 'Picture your Pokémon’s usual Kanto form. I’ll do the suspicious squinting.';
+  $('banter').textContent = game.history.at(-1)?.value === 0 ? 'A mystery within a mystery. No problem—I’ll try a different angle.' : top > .5 ? 'I am trying very hard not to look smug. Just one more detail…' : 'Picture your Pokémon’s original regional appearance. I’ll do the suspicious squinting.';
   $('question-panel').innerHTML = `<div class="question-number"><span>QUESTION ${String(game.history.length+1).padStart(2,'0')}</span><span class="question-spark" aria-hidden="true">✦</span></div>
     <h2 id="question-heading" tabindex="-1">${escape(q.text)}</h2>
     <details><summary>A little clarification?</summary><p>${escape(q.detail)}</p></details>
@@ -97,7 +100,7 @@ function renderGuess() {
 function storeRound(target, outcome) {
   if (finished) return;
   finished = true;
-  const round = {schema:1, roster:'kanto-151', engine:'bayes-v1', date:new Date().toISOString(), targetId:target.id, outcome, rejectedIds:[...game.rejected], answers:game.history.map(h => ({traitId:h.traitId,question:h.text,answer:h.value}))};
+  const round = {schema:1, roster:ROSTER_ID, region:gameRegion, engine:'bayes-v2', date:new Date().toISOString(), targetId:target.id, outcome, rejectedIds:[...game.rejected], answers:game.history.map(h => ({traitId:h.traitId,question:h.text,answer:h.value}))};
   try {
     const old = JSON.parse(localStorage.getItem('pokinator-rounds') || '[]');
     const rounds = Array.isArray(old) ? old : [];
@@ -132,13 +135,16 @@ function modal(title, html) {
 
 function openDex(select = false) {
   if (!pokemon.length) { toast('The Pokédex is still loading. Try again in a moment.'); return; }
-  modal(select ? 'Who were you thinking of?' : 'A whole region of possibilities.', `<p>${select ? 'Choose your Pokémon to finish the round and give Pokinator a useful field note.' : 'Think of any of these 151 Pokémon. Keep your choice a secret when you start.'}</p><label class="hidden" for="dex-search">Search Pokémon by name or number</label><input class="dex-search" id="dex-search" type="search" placeholder="Find a Pokémon by name or number…" autocomplete="off"><div class="dex-grid" id="dex-grid"></div><p class="fine-print">Standard Kanto appearances; current types and evolution ancestry. No shiny, Mega, or regional forms.</p>`);
+  const catalog = select ? game.pokemon : pokemon;
+  modal(select ? 'Who were you thinking of?' : 'Three regions of possibilities.', `<p>${select ? `Choose one of the ${catalog.length} Pokémon in this round to finish and give Pokinator a useful field note.` : `Think of any of these ${ROSTER_SIZE} Pokémon from Gens 1–3. Keep your choice a secret when you start.`}</p><div class="dex-controls"><label class="hidden" for="dex-search">Search Pokémon by name or number</label><input class="dex-search" id="dex-search" type="search" placeholder="Find a Pokémon by name or number…" autocomplete="off">${select ? '' : `<label class="hidden" for="dex-region">Filter by debut region</label><select class="region-select" id="dex-region">${REGIONS.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}</select>`}</div><p id="dex-count" class="fine-print" role="status"></p><div class="dex-grid" id="dex-grid"></div><p class="fine-print">Original regional appearances; current types and evolution ancestry. Standard Unown, Castform, and Deoxys forms. No shiny, Mega, or later regional variants.</p>`);
   const draw = () => {
     const query = $('dex-search').value.trim().toLowerCase().replace(/^#/, '');
-    const matches = pokemon.filter(p => p.name.toLowerCase().includes(query) || String(p.id).padStart(3,'0').includes(query));
+    const matches = filterRoster(catalog, $('dex-region')?.value || 'all').filter(p => p.name.toLowerCase().includes(query) || String(p.id).padStart(3,'0').includes(query));
+    $('dex-count').textContent = `${matches.length} Pokémon`;
     $('dex-grid').innerHTML = matches.length ? matches.map(p => `<${select ? 'button' : 'div'} class="dex-item ${select ? 'selectable' : ''}" ${select ? `data-pick="${p.id}"` : ''}><small>#${String(p.id).padStart(3,'0')}</small><img src="assets/pokemon/${p.id}.png" loading="lazy" alt=""><b>${escape(p.name)}</b></${select ? 'button' : 'div'}>`).join('') : '<p>No Pokémon found. Try another name.</p>';
   };
   $('dex-search').addEventListener('input', draw);
+  $('dex-region')?.addEventListener('change', draw);
   draw();
 }
 
@@ -148,10 +154,15 @@ function showHistory() {
 }
 
 function showAbout(data = false) {
-  modal(data ? 'Behind the hunch.' : 'You think. I overthink.', data ? `<p>Pokinator starts with an equal chance for each Pokémon. Every answer updates those chances. It chooses useful clues, then gives them playful wording from a procedural template library.</p><p>This first version uses a probability engine, not a trained neural network. Questions stay tied to explicit facts instead of invented lore.</p><h3>Your field notes stay here.</h3><p>Up to 200 completed rounds are saved in this browser only. Export them as labeled JSON for future training experiments. They are never sent to a server.</p><div class="modal-actions"><button class="secondary" id="export-data">Export my rounds ↓</button><button class="secondary" id="clear-data">Clear my rounds</button></div><p class="fine-print">Species metadata and pixel sprites: <a href="https://pokeapi.co/docs/v2" target="_blank" rel="noreferrer">PokéAPI</a> and <a href="https://github.com/PokeAPI/sprites" target="_blank" rel="noreferrer">PokéAPI sprites</a>. Curated visual clues are part of this fan project. Pokémon and character designs belong to their respective owners.</p>` : `<p>Choose one of the original 151 Pokémon, then keep it in your head. Pokinator will ask playful questions that become a little suspicious as the possibilities narrow.</p><h3>Five answers. No homework.</h3><p>“Yes” and “No” are strong clues. “Probably” and “Probably not” leave room for doubt. “Not sure” skips the clue entirely. You can undo an answer whenever you need to.</p><h3>The fine print, professor.</h3><p>Picture its usual Kanto appearance. We use current types, so Fairy and Steel types count. Evolution ancestry includes later pre-evolutions. Each question has a little clarification if you need it.</p><p>If a guess misses, reject it to keep going—or reveal your Pokémon. Hunch strength is a score based on your answers, not a promise.</p><div class="modal-actions"><button class="primary" id="modal-play">I’ve got one in mind <span>↗</span></button></div>`);
+  modal(data ? 'Behind the hunch.' : 'You think. I overthink.', data ? `<p>Pokinator starts with an equal chance for each Pokémon in your selected roster. Every answer updates those chances. It chooses useful clues, then gives them playful wording from a procedural template library.</p><p>This version uses a probability engine, not a trained neural network. Questions stay tied to explicit facts instead of invented lore.</p><h3>Your field notes stay here.</h3><p>Up to 200 completed rounds are saved in this browser only. Export them as labeled JSON for future training experiments. They are never sent to a server. Earlier Kanto rounds keep their original roster labels.</p><div class="modal-actions"><button class="secondary" id="export-data">Export my rounds ↓</button><button class="secondary" id="clear-data">Clear my rounds</button></div><p class="fine-print">Species metadata and pixel sprites: <a href="https://pokeapi.co/docs/v2" target="_blank" rel="noreferrer">PokéAPI</a> and <a href="https://github.com/PokeAPI/sprites" target="_blank" rel="noreferrer">PokéAPI sprites</a>. Curated visual clues are part of this fan project. Pokémon and character designs belong to their respective owners.</p>` : `<p>Choose any of the first 386 Pokémon, introduced in Gens 1–3, then keep it in your head. Play all three regions, or choose a species that debuted in Kanto, Johto, or Hoenn using the selector before you start.</p><h3>Five answers. No homework.</h3><p>“Yes” and “No” are strong clues. “Probably” and “Probably not” leave room for doubt. “Not sure” skips the clue entirely. You can undo an answer whenever you need to.</p><h3>The fine print, professor.</h3><p>Picture its original regional appearance. We use current types, so Fairy and Steel types count. Evolution ancestry includes later pre-evolutions. Alternate forms are not separate guesses: use standard Unown, normal Castform, and Normal Forme Deoxys. Each question has a little clarification if you need it.</p><p>If a guess misses, reject it to keep going—or reveal your Pokémon. Hunch strength is a score based on your answers, not a promise.</p><div class="modal-actions"><button class="primary" id="modal-play">I’ve got one in mind <span>↗</span></button></div>`);
 }
 
 startButton.addEventListener('click', start);
+$('region').addEventListener('change', () => {
+  const region = REGIONS.find(r => r.id === $('region').value);
+  $('roster-note').textContent = `${region.count} possibilities. One very good hunch.`;
+  $('region-hint').textContent = region.generation ? `Species introduced in Gen ${region.generation}.` : 'Kanto, Johto, and Hoenn. All first 386 Pokémon.';
+});
 $('exit-game').addEventListener('click', () => view('welcome'));
 $('dex-open').addEventListener('click', () => openDex());
 $('about-open').addEventListener('click', () => showAbout());
