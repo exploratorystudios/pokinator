@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f1e8">
+  <meta name="description" content="Think of a Pokémon. Pokinator will ask the suspiciously specific questions. A playful guessing game for the original 151.">
+  <title>Pokinator — I've got a hunch.</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="./" aria-label="Pokinator home"><span class="brand-ball" aria-hidden="true"></span>pokinator<span class="brand-dot">✦</span></a>
+    <nav aria-label="Main navigation"><button class="nav-button" id="dex-open">The original 151 <span>↗</span></button><button class="nav-button" id="about-open">How it works <span>↗</span></button></nav>
+    <div class="edition"><span class="live-dot"></span>KANTO EDITION <span class="version">VOL. 01</span></div>
+  </header>
+  <main id="main">
+    <section id="welcome" class="welcome">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="tiny-star">✳</span> A LITTLE PSYCHIC. A LOT OF POKÉMON.</div>
+        <h1>Your Pokémon.<br>My <span class="italic-word">next hunch.<svg viewBox="0 0 350 20" aria-hidden="true"><path d="M4 14 Q150 -2 343 9 M24 18 Q186 5 323 15"/></svg></span></h1>
+        <p class="hero-description">Pick a Pokémon. Keep it to yourself.<br>I’ll ask a few oddly specific questions.<br>Let’s see if I can read your mind.</p>
+        <button id="start" class="primary start-button">Let’s play <span>↗</span></button>
+        <div class="hero-note"><span class="mini-ball" aria-hidden="true"></span> 151 possibilities. One very good hunch.</div>
+      </div>
+      <div class="hero-art" aria-label="A mysterious Poké Ball floating above a psychic pedestal" role="img">
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+        <span class="art-label label-one">THINKING OF SOMEONE?</span><span class="art-label label-two">NO PEEKING. PROMISE.</span>
+        <div class="sprite-card card-one"><span>#025</span><img src="assets/pokemon/25.png" alt="" width="96" height="96"></div>
+        <div class="sprite-card card-two"><span>#094</span><img src="assets/pokemon/94.png" alt="" width="96" height="96"></div>
+        <div class="sprite-card card-three"><span>#001</span><img src="assets/pokemon/1.png" alt="" width="96" height="96"></div>
+        <span class="spark spark-one">✦</span><span class="spark spark-two">✧</span><span class="spark spark-three">✳</span>
+        <div class="mystery-ball"><div class="ball-sheen"></div><div class="ball-seam"></div><div class="ball-eye"><span>?</span></div></div>
+        <div class="psychic-ring ring-one"></div><div class="psychic-ring ring-two"></div>
+        <div class="pedestal"><span>EST. IN YOUR HEAD</span></div>
+        <div class="art-sticker">100%<br><b>good hunches*</b><small>*confidence, not accuracy</small></div>
+      </div>
+    </section>
+    <section id="game" class="game hidden" aria-labelledby="question-heading">
+      <div class="game-topline"><button id="exit-game" class="text-button">← Back to the lab</button><span class="game-tag"><span class="live-dot"></span> MIND READING IN PROGRESS</span><button id="history-open" class="text-button">Your answers <span id="history-count">0</span></button></div>
+      <div class="game-layout">
+        <aside class="professor-panel"><div class="small-orb" aria-hidden="true"><span>?</span></div><span class="eyebrow">THE HUNCH DEPARTMENT</span><h2 id="mood">Let’s get a feel<br>for this one.</h2><p id="banter">Picture your Pokémon’s usual Kanto form. I’ll do the suspicious squinting.</p><div class="candidate-meter"><span>STILL IN THE RUNNING</span><strong id="remaining">151</strong><div class="meter-track"><div id="meter-fill"></div></div><small>Just a hunch, never a certainty.</small></div></aside>
+        <div id="question-panel" class="question-panel" aria-live="polite" aria-atomic="true"></div>
+      </div>
+      <div class="game-bottom"><span>Changed your mind? You can always undo an answer.</span><button id="undo" class="text-button">↶ Undo last answer</button></div>
+    </section>
+    <section id="result" class="result hidden" aria-live="polite"></section>
+    <section id="how-strip" class="how-strip" aria-label="How to play"><div class="strip-intro">A meeting of<br><em>questionable minds.</em></div><div class="step"><span>01</span><p><b>Pick your Pokémon.</b><small>Any of the original 151. No shinies or regional forms.</small></p></div><div class="step"><span>02</span><p><b>Follow the hunch.</b><small>A few playful questions. “Not sure” is always fair.</small></p></div><div class="step"><span>03</span><p><b>Make me prove it.</b><small>One big reveal. Hopefully, one very smug Pokinator.</small></p></div></section>
+  </main>
+  <footer><span>MADE FOR CURIOUS TRAINERS.</span><span>An unofficial fan project. Pokémon belongs to its respective owners.</span><button id="data-open" class="text-button">Behind the hunch ↗</button></footer>
+  <dialog id="modal" aria-labelledby="modal-title"><div class="modal-header"><h2 id="modal-title"></h2><button id="modal-close" class="icon-button" aria-label="Close dialog">×</button></div><div id="modal-body"></div></dialog>
+  <div id="toast" role="status" class="toast hidden"></div>
+</body>
+</html>
