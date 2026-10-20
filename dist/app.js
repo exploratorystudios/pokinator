@@ -1,11 +1,13 @@
 import {Game, ENGINE_VERSION} from './engine.js?v=deduction-v4';
 import {ROSTER_SIZE, ROSTER_ID, REGIONS, filterRoster, validRoster} from './config.js';
+import {RunRecorder, saveReport, clearReports} from './report-data.js?v=run-report-v1';
 
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const answerNames = {'1':'Yes','.5':'Probably','0':'Not sure','-0.5':'Probably not','-1':'No','0.5':'Probably'};
 let pokemon = [], game = null, guessed = null, finished = false, toastTimer;
 let gameRegion = 'all';
+let recorder = null;
 const startButton = $('start');
 startButton.disabled = true;
 startButton.innerHTML = 'Warming up… <span>✦</span>';
@@ -43,6 +45,7 @@ function start() {
   if (!pokemon.length) { load(); return; }
   gameRegion = $('region').value;
   game = new Game(filterRoster(pokemon, gameRegion));
+  recorder = new RunRecorder(game,{region:gameRegion,engine:ENGINE_VERSION});
   guessed = null;
   finished = false;
   view('game');
@@ -80,7 +83,7 @@ function renderQuestion() {
 
 function answer(value) {
   if (!game || !$('result').classList.contains('hidden') || $('game').classList.contains('hidden')) return;
-  game.answer(value);
+  recorder.answer(value);
   if (game.hasConflict()) renderConflict(); else if (game.shouldGuess()) renderGuess(); else renderQuestion();
 }
 
@@ -89,11 +92,13 @@ function renderGuess() {
   view('result');
   const informative = game.history.filter(h => h.value !== 0).length;
   if (informative < 3 && game.remaining() > 1) {
+    recorder.record('stumped');
     guessed = null;
     $('result').innerHTML = `<div class="eyebrow">THE MYSTERY REMAINS</div><h1>You’ve got me stumped.</h1><div class="success-stamp" aria-hidden="true">?</div><p class="result-subtitle">I need a few more clues than that to make a fair guess.<br>You can reveal your Pokémon, or give me another shot.</p><div class="result-actions"><button class="primary" id="reveal">Reveal my Pokémon <span>↗</span></button><button class="secondary" id="again">Try a new round</button></div>`;
   } else {
     const best = game.ranking()[0];
     guessed = best.pokemon;
+    recorder.record('guess',{id:guessed.id});
     const percent = Math.round(best.probability*100);
     $('result').innerHTML = `<div class="eyebrow">${best.probability >= .8 ? 'I’VE GOT A HUNCH' : 'THIS ONE IS A STRETCH'}</div><h1>Is it ${escape(guessed.name)}?</h1><img class="result-sprite" src="assets/pokemon/${guessed.id}.png" alt="${escape(guessed.name)}"><div>${guessed.types.map(t => `<span class="type-pill">${escape(t)}</span>`).join('')}</div><p class="result-subtitle">${best.probability >= .8 ? 'I knew there was something familiar about you.' : 'My best lead so far. I may need a few more clues.'}<br>${game.history.length} questions · ${percent}% hunch strength</p><div class="result-actions"><button class="primary" id="correct">That’s my Pokémon! <span>✦</span></button><button class="secondary" id="incorrect">Not this one</button></div><p><button class="text-button" id="reveal">Reveal my Pokémon instead ↗</button></p><p class="fine-print">Hunch strength reflects your answers, not a guaranteed accuracy rate.</p>`;
   }
@@ -102,6 +107,7 @@ function renderGuess() {
 }
 
 function renderConflict() {
+  recorder.record('conflict');
   guessed = null;
   view('result');
   $('result').innerHTML = `<div class="eyebrow">A CLUE NEEDS A SECOND LOOK</div><h1>Let’s revisit a clue.</h1><p class="result-subtitle">Your definite answers and ruled-out guesses leave no matching Pokémon.<br>You can edit any earlier answer, undo the last answer, or restore a rejected guess.</p><div class="result-actions"><button class="primary" id="review">Review or edit answers <span>↗</span></button>${game.history.length ? '<button class="secondary" id="conflict-undo">Undo last answer</button>' : ''}${game.rejected.length ? '<button class="secondary" id="restore-guess">Undo rejected guess</button>' : ''}</div><p><button class="text-button" id="reveal">Reveal my Pokémon instead ↗</button></p><p class="fine-print">Choose “Probably” or “Not sure” for a clue you’re uncertain about. Your other answers stay in place.</p>`;
@@ -112,26 +118,29 @@ function renderConflict() {
 function storeRound(target, outcome) {
   if (finished) return;
   finished = true;
+  const report = recorder.finish(target,outcome);
+  const reportSaved = saveReport(report);
   const round = {schema:1, roster:ROSTER_ID, region:gameRegion, engine:ENGINE_VERSION, date:new Date().toISOString(), targetId:target.id, outcome, rejectedIds:[...game.rejected], answers:game.history.map(h => ({traitId:h.traitId,question:h.text,answer:h.value,finisher:h.finisher}))};
   try {
     const old = JSON.parse(localStorage.getItem('pokinator-rounds') || '[]');
     const rounds = Array.isArray(old) ? old : [];
     localStorage.setItem('pokinator-rounds', JSON.stringify([...rounds.slice(-199), round]));
   } catch { toast('Your browser could not save this round. You can still keep playing.'); }
+  return reportSaved ? report.id : null;
 }
 
 function complete(target, outcome) {
-  storeRound(target, outcome);
+  const reportId = storeRound(target, outcome);
   guessed = target;
   $('modal').close();
   view('result');
   const won = outcome === 'correct';
-  $('result').innerHTML = `<div class="eyebrow">${won ? 'A SUCCESSFUL MEETING OF MINDS' : 'ONE FOR MY FIELD NOTES'}</div><h1>${won ? 'Caught that thought.' : 'So it was '+escape(target.name)+'.'}</h1><img class="result-sprite" src="assets/pokemon/${target.id}.png" alt="${escape(target.name)}"><p class="result-subtitle">${won ? escape(target.name)+' couldn’t hide forever. '+game.history.length+' questions did the trick.' : 'Well, that theory fainted. Thanks for solving the mystery.'}</p><div class="result-actions"><button class="primary" id="again">Another Pokémon? <span>↗</span></button><button class="secondary" id="review">Review this round</button></div><p class="fine-print">This round is saved only in this browser. Manage or export it in “Behind the hunch.”</p>`;
+  $('result').innerHTML = `<div class="eyebrow">${won ? 'A SUCCESSFUL MEETING OF MINDS' : 'ONE FOR MY FIELD NOTES'}</div><h1>${won ? 'Caught that thought.' : 'So it was '+escape(target.name)+'.'}</h1><img class="result-sprite" src="assets/pokemon/${target.id}.png" alt="${escape(target.name)}"><p class="result-subtitle">${won ? escape(target.name)+' couldn’t hide forever. '+game.history.length+' questions did the trick.' : 'Well, that theory fainted. Thanks for solving the mystery.'}</p><div class="result-actions"><button class="primary" id="again">Another Pokémon? <span>↗</span></button><button class="secondary" id="review">Review this round</button></div>${reportId ? `<p class="round-report"><a id="round-report" href="report.html#${reportId}">Explore this round’s report <span aria-hidden="true">→</span></a></p>` : '<p class="fine-print">The report could not be saved. Allow browser storage to explore reports after your next round.</p>'}<p class="fine-print">This round is saved only in this browser. Manage or export it in “Behind the hunch.”</p>`;
 }
 
 function reject() {
   if (!guessed) return;
-  game.reject(guessed.id);
+  recorder.record('reject',{id:guessed.id},() => game.reject(guessed.id));
   renderQuestion();
 }
 
@@ -176,7 +185,7 @@ $('dex-open').addEventListener('click', () => openDex());
 $('about-open').addEventListener('click', () => showAbout());
 $('data-open').addEventListener('click', () => showAbout(true));
 $('history-open').addEventListener('click', showHistory);
-$('undo').addEventListener('click', () => {game.back();renderQuestion();});
+$('undo').addEventListener('click', () => {recorder.record('undo',{question:game.history.length},() => game.back());renderQuestion();});
 $('modal-close').addEventListener('click', () => $('modal').close());
 $('modal').addEventListener('click', event => { if(event.target === $('modal')) { const rect = $('modal').getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) $('modal').close(); } });
 
@@ -190,11 +199,12 @@ document.addEventListener('click', event => {
   if (button.id === 'incorrect') reject();
   if (button.id === 'reveal') openDex(true);
   if (button.id === 'review') showHistory();
-  if (button.id === 'conflict-undo') { game.back(); renderQuestion(); }
-  if (button.id === 'restore-guess') { game.restoreRejected(); if (game.shouldGuess()) renderGuess(); else renderQuestion(); }
+  if (button.id === 'conflict-undo') { recorder.record('undo',{question:game.history.length},() => game.back()); renderQuestion(); }
+  if (button.id === 'restore-guess') { recorder.record('restore',{id:game.rejected.at(-1)},() => game.restoreRejected()); if (game.shouldGuess()) renderGuess(); else renderQuestion(); }
   if (button.id === 'modal-play') { $('modal').close(); start(); }
   if (button.id === 'clear-data') {
-    try { localStorage.removeItem('pokinator-rounds'); toast('Your locally saved rounds have been cleared.'); } catch { toast('Your browser could not clear its saved rounds.'); }
+    clearReports();
+    try { localStorage.removeItem('pokinator-rounds'); toast('Your locally saved rounds and reports have been cleared.'); } catch { toast('Your browser could not clear its saved rounds.'); }
   }
   if (button.id === 'export-data') {
     try {
@@ -209,7 +219,7 @@ document.addEventListener('click', event => {
 document.addEventListener('change', event => {
   const index = event.target.dataset.historyIndex;
   if (index === undefined || finished) return;
-  game.revise(Number(index),Number(event.target.value));
+  recorder.record('revise',{question:Number(index)+1,oldValue:game.history[index].value,value:Number(event.target.value),text:game.history[index].text},() => game.revise(Number(index),Number(event.target.value)));
   $('modal').close();
   if (game.hasConflict()) renderConflict(); else if (game.shouldGuess()) renderGuess(); else renderQuestion();
 });

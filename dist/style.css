@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
+.round-report{margin:22px 0 8px}.round-report a{display:inline-flex;align-items:center;gap:12px;padding:8px 0;font-size:13px;color:#5d6552;text-decoration:underline;text-decoration-color:#b6bda8;text-underline-offset:4px}.round-report a:hover{text-decoration-color:currentColor}
+
 .welcome{overflow:clip}
 
 .region-control{display:flex;flex-direction:column;gap:7px;max-width:330px;margin:0 0 23px}

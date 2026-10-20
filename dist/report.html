@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f5f1e8">
+  <title>Your round report · Pokinator</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css?v=run-report-v1">
+  <link rel="stylesheet" href="report.css?v=run-report-v1">
+  <script type="module" src="report.js?v=run-report-v1"></script>
+</head>
+<body class="report-page">
+  <header class="topbar report-topbar">
+    <a class="wordmark" href="./" aria-label="Pokinator home"><span class="brand-ball" aria-hidden="true"></span>pokinator<span class="brand-dot">✦</span></a>
+    <a class="text-button" href="./">Another Pokémon? →</a>
+  </header>
+  <main class="report-main">
+    <section id="report-empty" class="report-empty" role="status"><div class="eyebrow">THE HUNCH DEPARTMENT</div><h1>Opening your field notes…</h1></section>
+    <div id="report-content" hidden>
+      <section class="report-intro">
+        <div><div class="eyebrow">YOUR ROUND, UNDER THE MAGNIFYING GLASS</div><h1 id="report-heading"></h1><p id="report-summary"></p><p id="report-meta" class="report-muted"></p></div>
+        <img id="report-sprite" width="144" height="144" alt="">
+      </section>
+      <dl id="report-stats" class="report-stats"></dl>
+      <nav class="report-jumps" aria-label="Report sections"><a href="#decision-tree">The decision tree ↓</a><a href="#candidate-section">Narrowing it down ↓</a><a href="#clue-section">Every clue ↓</a></nav>
+      <section id="decision-tree" class="report-section">
+        <div class="report-section-heading"><div><div class="eyebrow">FOLLOW THE BRANCHES</div><h2>A suspicious train of thought.</h2></div><div class="report-exports"><button id="download-svg" class="text-button">Save SVG</button><button id="download-png" class="text-button">Save PNG</button><button id="download-json" class="text-button">Round data</button></div></div>
+        <p>Your answers trace one path through this tree. Dashed leaves show how many candidates a different definite answer would have matched; those paths weren’t explored.</p>
+        <div class="tree-controls"><button id="tree-fit" class="report-control">Fit whole tree</button><button id="tree-readable" class="report-control">Readable size</button><button id="tree-out" class="report-control" aria-label="Zoom out">−</button><output id="tree-zoom" aria-label="Zoom level"></output><button id="tree-in" class="report-control" aria-label="Zoom in">+</button><span class="report-muted">Drag to pan · select a question for details</span></div>
+        <div id="tree-viewport" class="tree-viewport"><svg id="report-tree" role="img" aria-label="Your round’s branching decision tree"><g id="tree-scene"></g></svg></div>
+        <div class="tree-navigation"><label for="tree-question">Jump to <select id="tree-question" class="region-select"></select></label><p class="report-muted">Probably changes the ranking. Not sure skips a clue. Both leave the candidate pool intact.</p></div>
+        <section id="tree-detail" class="tree-detail" aria-live="polite"></section>
+      </section>
+      <section id="candidate-section" class="report-section">
+        <div class="eyebrow">THE SUSPECT LIST</div><h2>Narrowing it down.</h2><p>See the candidate pool after every answer, hunch, rejection, undo, and edit. A corrected clue can bring candidates back.</p>
+        <svg id="candidate-chart" class="candidate-chart" role="img" aria-label="Number of possible Pokémon throughout this round"></svg>
+      </section>
+      <section id="clue-section" class="report-section"><div class="eyebrow">NOTHING UP MY SLEEVE</div><h2>Every clue. Every change of mind.</h2><p>Open an entry to inspect the leading guesses, ruled-out Pokémon, and how your chosen Pokémon’s score changed.</p><ol id="report-history" class="report-history"></ol></section>
+      <p id="export-status" class="report-muted" role="status"></p>
+      <p class="report-footnote">Hunch strength is a score based on your answers, not a measured accuracy rate. Unexplored branches show candidate counts, not invented future questions. Reports stay in your browser; the latest three are retained, and this tab keeps its current report until its session ends. Clear saved rounds and reports in “Behind the hunch.”</p>
+    </div>
+  </main>
+  <footer><span>FIELD NOTES FOR CURIOUS TRAINERS.</span><span>An unofficial fan project. Pokémon belongs to its respective owners.</span><a class="text-button" href="./">Back to Pokinator →</a></footer>
+</body></html>
