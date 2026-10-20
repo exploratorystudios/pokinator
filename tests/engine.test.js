@@ -259,9 +259,98 @@ test('retry rounds can recover from mistaken soft clues without repeating binary
 test('question variation and soft answers retain a valid normalized distribution', () => {
   for (const random of [()=>.01,()=>.99]) {
     const game = new Game(pokemon,{random});
-    for (let i=0;i<15;i++) game.answer(i%2 ? .5 : -.5);
+    for (let i=0;i<15&&!game.shouldGuess();i++) game.answer(i%2 ? .5 : -.5);
     const ranking = game.ranking();
     assert.ok(Math.abs(ranking.reduce((s,p)=>s+p.probability,0)-1)<1e-10);
     assert.ok(ranking.every(p=>p.probability>=0));
   }
+});
+
+function reachDelibirdFinale() {
+  const game=new Game(pokemon,{random:()=>.5});
+  for(let i=0;i<25&&!game.shouldGuess();i++) {
+    if(game.current.id==='gift-bird')return game;
+    const trait=game.current;
+    game.answer((trait.members.has(225)?1:-1)*(trait.signature?.5:1));
+  }
+  assert.fail('The Delibird round should end with its present-sack clue');
+}
+
+test('Delibird’s identifying clue is saved for the finale after broader clues', () => {
+  const game=reachDelibirdFinale();
+  assert.ok(game.current.finisher);
+  assert.equal(game.current.targetId,225);
+  assert.ok(game.history.length>=3,'A signature clue should not open a full-roster round');
+  assert.ok(game.history.some(h=>h.group==='type'));
+  assert.ok(!game.history.some(h=>h.traitId==='gift-bird'));
+});
+
+test('Yes or Probably on the final identifying clue immediately reveals the leading Pokémon', () => {
+  for(const value of [1,.5]) {
+    const game=reachDelibirdFinale();
+    game.answer(value);
+    assert.ok(game.shouldGuess());
+    assert.equal(game.current,null,'A final confirmation must not be followed by another type question');
+    assert.equal(game.ranking()[0].pokemon.id,225);
+    assert.equal(game.history.at(-1).traitId,'gift-bird');
+    assert.ok(game.history.at(-1).finisher);
+  }
+});
+
+test('a negative or unknown finale answer keeps alternatives and does not force the hinted guess', () => {
+  for(const value of [-1,0]) {
+    const game=reachDelibirdFinale();
+    const before=[...game.candidates];
+    const oldHistory=structuredClone(game.history);
+    game.answer(value);
+    assert.deepEqual(game.history.slice(0,-1),oldHistory);
+    assert.equal(game.hasConflict(),false);
+    if(value===-1) {
+      assert.ok(!game.candidates.includes(225));
+      assert.equal(game.ranking().find(r=>r.pokemon.id===225).probability,0);
+    } else {
+      assert.deepEqual(game.candidates,before,'Unknown must not eliminate alternatives');
+      assert.equal(game.readyForReveal(),false);
+      assert.equal(game.shouldGuess(),false);
+    }
+    assert.notEqual(game.current?.id,'gift-bird','The next question must not repeat the finale');
+  }
+});
+
+test('undo preserves the final-question role and a rejected soft guess keeps all earlier clues', () => {
+  const game=reachDelibirdFinale();
+  const text=game.current.text;
+  game.answer(.5);
+  game.back();
+  assert.ok(game.current.finisher);
+  assert.equal(game.current.targetId,225);
+  assert.equal(game.current.text,text);
+  assert.equal(game.shouldGuess(),false,'Undo must return to the confirmation question');
+  game.answer(.5);
+  const history=structuredClone(game.history);
+  game.reject(225);
+  assert.deepEqual(game.history,history);
+  assert.equal(game.readyForReveal(),false,'A rejected hint target cannot trigger its old finale again');
+  assert.notEqual(game.current?.id,'gift-bird');
+  assert.equal(game.ranking().find(r=>r.pokemon.id===225).probability,0);
+});
+
+test('finishing a deduction can add one final visual clue without adding known factual questions', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'category:Delivery Pokémon',1);
+  // This category is an alias of the visual clue, so it must not be repeated.
+  assert.ok(game.shouldGuess());
+  assert.equal(game.current,null);
+  assert.equal(game.ranking()[0].pokemon.id,225);
+  const other=new Game(pokemon,{random:()=>.5});
+  give(other,'generation:2',1);
+  give(other,'type:ice',1);
+  give(other,'type:flying',1);
+  assert.equal(other.remaining(),1);
+  assert.equal(other.current.id,'gift-bird');
+  assert.ok(other.current.finisher);
+  assert.equal(other.shouldGuess(),false);
+  other.answer(1);
+  assert.ok(other.shouldGuess());
+  assert.equal(other.current,null);
 });

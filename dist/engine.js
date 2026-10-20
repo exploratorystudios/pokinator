@@ -112,7 +112,8 @@ export function buildTraits(pokemon) {
       const membership = new Set(members);
       // A question and its inverse are the same binary fact, regardless of wording.
       const key = splitKey(pokemon.map(p => p.id), membership);
-      traits.push({id, group, lines, members:membership, key, detail, signature});
+      const revealing = signature && members.length <= 3;
+      traits.push({id, group, lines, members:membership, key, detail, signature, revealing});
     }
   };
   for (const [type, lines] of Object.entries(typeLines)) add(`type:${type}`, 'type', lines, p => p.types.includes(type), `Count either of its official types. Use its original regional appearance with current typings.`);
@@ -159,13 +160,14 @@ function splitKey(ids, members) {
   return parts.sort().join('|');
 }
 
-export const ENGINE_VERSION = 'deduction-v3';
+export const ENGINE_VERSION = 'deduction-v4';
 
 export class Game {
   constructor(pokemon, {random = Math.random} = {}) {
     this.pokemon = pokemon;
     this.traits = buildTraits(pokemon);
     this.traitById = new Map(this.traits.map(t => [t.id,t]));
+    this.revealingKeys = new Set(this.traits.filter(t => t.revealing).map(t => t.key));
     this.random = random;
     this.history = [];
     this.rejected = [];
@@ -197,8 +199,26 @@ export class Game {
   }
   next() {
     const ranking = this.ranking();
+    if (this.hasConflict() || this.readyForReveal(ranking[0].pokemon.id)) {
+      this.current = null;
+      return;
+    }
+    const available = this.availableTraits();
+    // Keep the most identifying visual details (and aliases of those details)
+    // for the payoff. Broad visual clues still help with the investigation.
+    const discovery = available.filter(t => !t.revealing && !this.revealingKeys.has(t.key));
+    const informative = this.history.filter(h => h.value !== 0).length;
+    const finaleReady = this.candidates.length <= 2 ||
+      (this.candidates.length <= 4 && informative >= 3) ||
+      (ranking[0].probability >= .6 && informative >= 4) || !discovery.length;
+    const finisher = finaleReady ? this.finisherFor(ranking[0].pokemon.id) : null;
+    if (finisher) {
+      this.current = {...finisher, finisher:true, targetId:ranking[0].pokemon.id,
+        text:finisher.lines[Math.floor(this.random()*finisher.lines.length)]};
+      return;
+    }
     const lastGroup = this.history.at(-1)?.group;
-    const options = this.availableTraits().map(trait => {
+    const options = (discovery.length ? discovery : available).map(trait => {
       const mass = ranking.reduce((s,r) => s + (trait.members.has(r.pokemon.id) ? r.probability : 0), 0);
       let gain = mass > 0 && mass < 1 ? -mass*Math.log2(mass)-(1-mass)*Math.log2(1-mass) : 0;
       if (trait.group === 'category') gain *= this.history.length < 6 ? 0.08 : 0.52;
@@ -212,10 +232,22 @@ export class Game {
     if (!trait) { this.current = null; return; }
     this.current = {...trait, text:trait.lines[Math.floor(this.random()*trait.lines.length)]};
   }
+  finisherFor(id) {
+    const asked = new Set(this.history.map(h => this.traitById.get(h.traitId).key));
+    return this.traits.filter(t => t.revealing && t.members.has(id) && !asked.has(t.key) &&
+      this.candidates.every(candidate => candidate === id || !t.members.has(candidate)))
+      .sort((a,b) => a.members.size-b.members.size)[0] || null;
+  }
+  readyForReveal(leadingId = this.ranking()[0].pokemon.id) {
+    const last = this.history.at(-1);
+    return Boolean(last?.finisher && this.candidateIds.has(last.targetId) &&
+      leadingId === last.targetId && (last.value > 0 || this.candidates.length === 1));
+  }
   answer(value) {
     if (![-1,-.5,0,.5,1].includes(value) || !this.current) throw new Error('Invalid answer');
     const t = this.current;
-    this.history.push({traitId:t.id, group:t.group, text:t.text, value});
+    this.history.push({traitId:t.id, group:t.group, text:t.text, value,
+      finisher:Boolean(t.finisher), targetId:t.targetId});
     this.rebuild();
     this.next();
   }
@@ -231,7 +263,8 @@ export class Game {
     if (!this.history.length) return;
     const last = this.history.pop();
     this.rebuild();
-    this.current = {...this.traitById.get(last.traitId), text:last.text};
+    this.current = {...this.traitById.get(last.traitId), text:last.text,
+      finisher:last.finisher, targetId:last.targetId};
   }
   rebuild() {
     this.logs = new Map(this.pokemon.map(p => [p.id,0]));
@@ -275,6 +308,8 @@ export class Game {
   }
   shouldGuess() {
     if (this.hasConflict()) return false;
+    if (this.readyForReveal()) return true;
+    if (this.current?.finisher) return false;
     const informative = this.history.filter(h => h.value !== 0).length;
     return this.candidates.length === 1 || (informative >= 5 && this.ranking()[0].probability >= .88) || this.history.length >= 20 + this.rejected.length*5 || !this.current;
   }
