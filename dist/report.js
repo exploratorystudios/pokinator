@@ -1,5 +1,5 @@
 import {loadReport,ANSWER_NAMES} from './report-data.js?v=run-report-v1';
-import {buildTree,layoutTree,treeMarkup,exportTreeSvg,eventTitle,escape} from './report-tree.js?v=run-report-v1';
+import {buildTree,layoutTree,treeMarkup,exportTreeSvg,eventTitle,escape} from './report-tree.js?v=copy-v1';
 
 const $=id => document.getElementById(id);
 const percent=value => `${(value*100).toFixed(1)}%`;

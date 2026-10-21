@@ -60,7 +60,7 @@ function wrap(text) {
 
 export function treeMarkup(layout, interactive=true) {
   return layout.edges.map(e => `<g><path class="tree-edge ${e.observed?'observed':'unvisited'}" d="M${e.from.x+260},${e.from.y} C${e.from.x+300},${e.from.y} ${e.to.x-40},${e.to.y} ${e.to.x},${e.to.y}"/>${!['Start','Continue','Result'].includes(e.label)?`<text class="tree-label" x="${e.to.x-8}" y="${e.to.y-58}" text-anchor="end">${escape(e.label)}</text>`:''}</g>`).join('')+
-    layout.nodes.map(({node:n,x,y}) => `<g class="tree-node" data-node="${n.id}" ${interactive?'role="button" tabindex="0"':''} aria-label="${escape(n.title+'; '+n.detail)}"><title>${escape(n.title+' — '+n.detail)}</title><rect class="tree-box ${n.kind}" x="${x}" y="${y-49}" width="260" height="98" rx="7"/>${wrap(n.title).map((text,i) => `<text class="tree-title" x="${x+12}" y="${y-27+i*18}">${escape(text)}</text>`).join('')}<text class="tree-label" x="${x+12}" y="${y+35}">${escape(n.detail)}</text></g>`).join('');
+    layout.nodes.map(({node:n,x,y}) => `<g class="tree-node" data-node="${n.id}" ${interactive?'role="button" tabindex="0"':''} aria-label="${escape(n.title+'; '+n.detail)}"><title>${escape(n.title+' · '+n.detail)}</title><rect class="tree-box ${n.kind}" x="${x}" y="${y-49}" width="260" height="98" rx="7"/>${wrap(n.title).map((text,i) => `<text class="tree-title" x="${x+12}" y="${y-27+i*18}">${escape(text)}</text>`).join('')}<text class="tree-label" x="${x+12}" y="${y+35}">${escape(n.detail)}</text></g>`).join('');
 }
 
 export function exportTreeSvg(layout) {
