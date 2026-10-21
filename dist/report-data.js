@@ -7,7 +7,7 @@ let sequence = 0;
 function snapshot(game) {
   const ranked = game.ranking().filter(r => r.probability > 0);
   return {
-    count:game.remaining(), ids:[...game.candidates], generation:game.knownGeneration(),
+    count:game.remaining(), ids:[...game.candidates], generation:game.knownGeneration(),mistakeBudget:game.mistakeBudget,
     top:ranked.slice(0,5).map(r => ({id:r.pokemon.id, probability:r.probability})),
     scores:ranked.map(r => ({id:r.pokemon.id, probability:r.probability})),
   };

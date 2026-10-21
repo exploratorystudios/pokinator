@@ -1,4 +1,4 @@
-import {ANSWER_NAMES} from './report-data.js?v=run-report-v1';
+import {ANSWER_NAMES} from './report-data.js?v=recovery-v1';
 
 export const escape = value => String(value).replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -10,6 +10,7 @@ export function eventTitle(event,names) {
     case 'restore': return `Restored ${names[event.id]}`;
     case 'undo': return `Undid answer ${event.question}`;
     case 'revise': return `Edited answer ${event.question} to ${ANSWER_NAMES[event.value]}`;
+    case 'recover': return `Closest fits with ${event.budget} conflicting ${event.budget===1?'clue':'clues'}`;
     case 'conflict': return 'No candidates match these clues';
     case 'stumped': return 'Not enough clues to make a fair guess';
     default: return 'Round event';

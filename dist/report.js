@@ -1,5 +1,5 @@
-import {loadReport,ANSWER_NAMES} from './report-data.js?v=run-report-v1';
-import {buildTree,layoutTree,treeMarkup,exportTreeSvg,eventTitle,escape} from './report-tree.js?v=copy-v1';
+import {loadReport,ANSWER_NAMES} from './report-data.js?v=recovery-v1';
+import {buildTree,layoutTree,treeMarkup,exportTreeSvg,eventTitle,escape} from './report-tree.js?v=recovery-v1';
 
 const $=id => document.getElementById(id);
 const percent=value => `${(value*100).toFixed(1)}%`;
@@ -18,6 +18,7 @@ function render(report) {
   const answers=report.events.filter(e => e.kind==='answer');
   const rejected=report.events.filter(e => e.kind==='reject').length;
   const changes=report.events.filter(e => ['undo','revise','restore'].includes(e.kind)).length;
+  const recoveries=report.events.filter(e => e.kind==='recover').length;
   const region={all:'All three regions',kanto:'Kanto',johto:'Johto',hoenn:'Hoenn'}[report.region];
   const targetScore=report.final.targetProbability;
   document.title=`${target} · Your round report · Pokinator`;
@@ -28,6 +29,7 @@ function render(report) {
   $('report-sprite').alt=target;
   $('report-stats').innerHTML=[['Answers given',answers.length],['Candidates left',report.final.count],['Your Pokémon’s score',percent(targetScore)],['Rejected hunches',rejected]].map(([label,value]) => `<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join('');
   if (changes) $('report-meta').textContent+=` · ${changes} answer or rejection ${changes===1?'change':'changes'}`;
+  if (recoveries) $('report-meta').textContent+=` · ${recoveries} ${recoveries===1?'recovery':'recoveries'}`;
   $('report-empty').hidden=true;
   $('report-content').hidden=false;
 
@@ -67,7 +69,7 @@ function render(report) {
       $('tree-detail').innerHTML=`<h3>${escape(n.title)}</h3>${n.kind==='unvisited'?'<p>This answer wasn’t taken. The count comes from candidates compatible at the moment this question was asked; no future questions were simulated.</p>':eventDetails(e)}<p><a href="#entry-${n.index}">Find this ${e.kind==='answer'?'clue':'event'} in the full history ↓</a></p>`;
       $('tree-question').value=`event-${n.index}`;
     } else {
-      $('tree-detail').innerHTML=n.kind==='outcome' ? `<h3>${escape(target)}</h3><p>${report.outcome==='correct'?'You confirmed this Pokémon.':'You supplied this Pokémon after the investigation.'} Its final score was ${percent(targetScore)}; ${report.final.count} candidates remained compatible with your definite clues.</p>` : `<h3>A clean slate.</h3><p>All ${report.initial.count} Pokémon in your chosen roster began with equal weight. Follow the labeled answers to see what changed.</p>`;
+      $('tree-detail').innerHTML=n.kind==='outcome' ? `<h3>${escape(target)}</h3><p>${report.outcome==='correct'?'You confirmed this Pokémon.':'You supplied this Pokémon after the investigation.'} Its final score was ${percent(targetScore)}; ${report.final.count} candidates remained ${report.final.mistakeBudget?'in closest-fit mode':'compatible with your definite clues'}.</p>` : `<h3>A clean slate.</h3><p>All ${report.initial.count} Pokémon in your chosen roster began with equal weight. Follow the labeled answers to see what changed.</p>`;
       $('tree-question').value=nodeId;
     }
     if (focus) focusNode(nodeId);
@@ -102,8 +104,8 @@ function render(report) {
   function eventDetails(e) {
     const eliminated=e.before.ids.filter(id => !e.after.ids.includes(id));
     const restored=e.after.ids.filter(id => !e.before.ids.includes(id));
-    const label=e.kind==='answer' ? `<p><strong>${ANSWER_NAMES[e.value]}</strong>${e.finisher?' · One last hunch':''}. ${Math.abs(e.value)===1?'A definite answer filters the candidate pool.':e.value===0?'No candidates or scores change for Not sure.':'A tentative answer changes scores without eliminating candidates.'}</p>` : e.kind==='revise' ? `<p>${escape(e.text)}<br>${ANSWER_NAMES[e.oldValue]} → ${ANSWER_NAMES[e.value]}</p>` : '';
-    return `${label}<p>${e.before.count} → <strong>${e.after.count} candidates</strong>. ${escape(target)}: ${percent(e.before.targetProbability)} → ${percent(e.after.targetProbability)}${e.after.ids.includes(report.targetId)?'':' · ruled out by the current clues or rejection'}.</p>${e.after.generation?`<p>Debut region established: ${['','Kanto','Johto','Hoenn'][e.after.generation]}.</p>`:''}<p>Leading guesses after this event:</p>${ranked(e.after)}${eliminated.length?`<details><summary>${eliminated.length} Pokémon ruled out</summary><p>${escape(eliminated.map(id => names[id]).join(', '))}</p></details>`:''}${restored.length?`<details><summary>${restored.length} Pokémon brought back</summary><p>${escape(restored.map(id => names[id]).join(', '))}</p></details>`:''}${e.after.count<=30?`<details><summary>All ${e.after.count} remaining candidates</summary><p>${escape(e.after.ids.map(id => names[id]).join(', ')||'None')}</p></details>`:''}`;
+    const label=e.kind==='answer' ? `<p><strong>${ANSWER_NAMES[e.value]}</strong>${e.finisher?' · One last hunch':''}. ${Math.abs(e.value)===1?'A definite answer filters the candidate pool.':e.value===0?'No candidates or scores change for Not sure.':'A tentative answer changes scores without eliminating candidates.'}</p>` : e.kind==='revise' ? `<p>${escape(e.text)}<br>${ANSWER_NAMES[e.oldValue]} → ${ANSWER_NAMES[e.value]}</p>` : e.kind==='recover' ? `<p>The previous clues left no candidates. I resumed with the closest unrejected matches, allowing up to ${e.budget} conflicting definite ${e.budget===1?'answer':'answers'}. Every original answer was preserved. My leading alternative differed on:</p><ul>${e.answers.map(a=>`<li>${escape(a.text)} <strong>${ANSWER_NAMES[a.value]}</strong></li>`).join('')}</ul>` : '';
+    return `${label}<p>${e.before.count} → <strong>${e.after.count} candidates</strong>. ${escape(target)}: ${percent(e.before.targetProbability)} → ${percent(e.after.targetProbability)}${e.after.ids.includes(report.targetId)?'':' · ruled out by the current clues or rejection'}.</p>${e.after.mistakeBudget?`<p>Closest-fit mode: up to ${e.after.mistakeBudget} conflicting definite ${e.after.mistakeBudget===1?'answer':'answers'} allowed. Color and appearance clues have less weight in this mode.</p>`:''}${e.after.generation?`<p>Debut region established: ${['','Kanto','Johto','Hoenn'][e.after.generation]}.</p>`:''}<p>Leading guesses after this event:</p>${ranked(e.after)}${eliminated.length?`<details><summary>${eliminated.length} Pokémon ruled out</summary><p>${escape(eliminated.map(id => names[id]).join(', '))}</p></details>`:''}${restored.length?`<details><summary>${restored.length} Pokémon brought back</summary><p>${escape(restored.map(id => names[id]).join(', '))}</p></details>`:''}${e.after.count<=30?`<details><summary>All ${e.after.count} remaining candidates</summary><p>${escape(e.after.ids.map(id => names[id]).join(', ')||'None')}</p></details>`:''}`;
   }
   $('report-history').innerHTML=report.events.map((e,i) => `<li id="entry-${i}"><details><summary>${escape(eventTitle(e,names))}</summary><div class="event-details">${eventDetails(e)}<p><button class="text-button" data-focus="event-${i}">Show in the tree ↑</button></p></div></details><p class="event-result">${e.kind==='answer'?ANSWER_NAMES[e.value]+' · ':''}${e.before.count} → ${e.after.count} candidates</p></li>`).join('');
   $('report-history').addEventListener('click',e => { const b=e.target.closest('[data-focus]');if (b) { select(b.dataset.focus,{focus:true});$('decision-tree').scrollIntoView({behavior:'smooth'}); } });

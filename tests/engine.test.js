@@ -205,7 +205,7 @@ test('revising a region updates every deduction without losing other answers or 
   assert.equal(game.remaining(),285);
 });
 
-test('conflicting answers produce a review state, and editing one recovers without a reset', () => {
+test('the core exposes strict conflicts before the interface records recovery, and edits can resolve them', () => {
   const game=new Game(pokemon,{random:()=>.5});
   give(game,'type:fire',1);
   give(game,'type:water',-1);
@@ -222,6 +222,79 @@ test('conflicting answers produce a review state, and editing one recovers witho
   assert.ok(Math.abs(game.ranking().reduce((s,r)=>s+r.probability,0)-1)<1e-10);
 });
 
+test('Dragonite recovers after a reasonable orange-versus-brown answer and a rejected wrong guess', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  while (!game.shouldGuess()) game.answer(game.current.id==='color:brown' ? -1 : game.current.members.has(149) ? 1 : -1);
+  assert.equal(game.ranking()[0].pokemon.name,'Butterfree','Reproduce the original confusing color failure');
+  const history=structuredClone(game.history);
+  game.reject(12);
+  assert.ok(game.hasConflict());
+  const plan=game.recoveryPlan();
+  assert.deepEqual(plan.answers.map(a=>a.traitId),['color:brown']);
+  game.recover();
+  assert.equal(game.remaining(),19);
+  assert.ok(game.candidateIds.has(149));
+  assert.ok(!game.candidateIds.has(12));
+  assert.deepEqual(game.history,history,'Recovery does not change any original answer');
+  assert.equal(game.mistakeBudget,1);
+  assert.ok(game.candidates.every(id=>game.conflictsFor(id).length===1),'Only nearest alternatives are considered');
+  let further=0;
+  while(!game.shouldGuess() && further++<10)game.answer(game.current.members.has(149)?1:-1);
+  assert.equal(game.ranking()[0].pokemon.id,149);
+  assert.equal(further,4);
+  assert.equal(new Set(game.history.map(h=>h.traitId)).size,game.history.length);
+});
+
+test('recovery only operates at zero matches and never restores rejected guesses', () => {
+  const game=new Game(pokemon.filter(p=>[25,26,172].includes(p.id)),{random:()=>.5});
+  const before=game.ranking();
+  assert.equal(game.recoveryPlan(),null);
+  assert.equal(game.recover(),null);
+  assert.deepEqual(game.ranking(),before);
+  for(const id of [25,26,172])game.reject(id);
+  assert.ok(game.hasConflict());
+  assert.equal(game.recoveryPlan(),null,'There are no unrejected leads left');
+  assert.equal(game.recover(),null);
+  assert.equal(game.remaining(),0);
+});
+
+test('editing a conflicting clue restores exact-match mode without erasing other answers', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'generation:1',1);give(game,'type:dragon',1);give(game,'evolved',1);give(game,'can-evolve',-1);give(game,'color:brown',-1);
+  assert.ok(game.hasConflict());
+  game.recover();
+  const index=game.history.findIndex(h=>h.traitId==='color:brown');
+  assert.equal(game.history[index].value,-1);
+  assert.equal(game.mistakeBudget,1);
+  const answers=structuredClone(game.history);
+  game.revise(index,1);
+  assert.equal(game.mistakeBudget,0);
+  assert.deepEqual(game.history.filter((h,i)=>i!==index),answers.filter((h,i)=>i!==index));
+  assert.deepEqual(game.candidates,[149]);
+});
+
+test('an early wrong definite answer does not lock recovery into a long sequence of bad guesses', () => {
+  for(const target of [25,197,258,384]){
+    const game=new Game(pokemon,{random:()=>.5});let questions=0,recoveries=0,guesses=0,found=false;
+    for(let step=0;step<100;step++){
+      if(game.hasConflict()){
+        const old=structuredClone(game.history);assert.ok(game.recover());recoveries++;
+        assert.deepEqual(game.history,old);assert.ok(game.candidates.every(id=>!game.rejected.includes(id)));continue;
+      }
+      if(game.shouldGuess()){
+        const id=game.ranking()[0].pokemon.id;guesses++;
+        if(id===target){found=true;break;}game.reject(id);continue;
+      }
+      const truth=game.current.members.has(target)?1:-1;
+      game.answer(questions++===1?-truth:truth);
+    }
+    assert.ok(found,`Could not recover ${target}`);
+    assert.ok(questions<=30,`Too many questions for ${target}: ${questions}`);
+    assert.ok(guesses<=2,`Too many guesses for ${target}: ${guesses}`);
+    assert.equal(recoveries,1);
+  }
+});
+
 test('an accidentally rejected final candidate can be restored explicitly', () => {
   const game=play(pokemon.find(p=>p.id===151));
   game.reject(151);
@@ -230,6 +303,15 @@ test('an accidentally rejected final candidate can be restored explicitly', () =
   assert.equal(game.hasConflict(),false);
   assert.equal(game.ranking()[0].pokemon.id,151);
   assert.ok(game.shouldGuess());
+});
+
+test('restoring an accidentally rejected correct guess exits closest-fit mode again', () => {
+  const game=play(pokemon.find(p=>p.id===25));
+  game.reject(25);assert.ok(game.recover());
+  assert.equal(game.mistakeBudget,1);assert.ok(!game.candidateIds.has(25));
+  game.restoreRejected();
+  assert.equal(game.mistakeBudget,0);assert.equal(game.ranking()[0].pokemon.id,25);
+  assert.deepEqual(game.candidates,[25]);
 });
 
 test('retry rounds can recover from mistaken soft clues without repeating binary facts', () => {

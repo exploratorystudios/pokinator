@@ -87,3 +87,24 @@ test('exported tree escapes question text and includes real answer edges and unv
  const svg=exportTreeSvg(layoutTree(buildTree(finalize(recorder))));
  assert.ok(!svg.includes('<script>'));assert.ok(svg.includes('&lt;script&gt;'));assert.ok(svg.includes('Yes · unexplored answer'));assert.ok(svg.includes('>No</text>'));
 });
+
+test('a recovery report preserves the zero-match event, reconsidered clue, and restored target',()=>{
+ const {game,recorder}=setup();
+ while(!game.shouldGuess())recorder.answer(game.current.id==='color:brown'?-1:game.current.members.has(149)?1:-1);
+ recorder.record('guess',{id:12});recorder.record('reject',{id:12},()=>game.reject(12));
+ const plan=game.recoveryPlan();recorder.record('recover',plan,()=>game.recover());
+ while(!game.shouldGuess())recorder.answer(game.current.members.has(149)?1:-1);
+ recorder.record('guess',{id:149});
+ const report=finalize(recorder,149),recovery=report.events.find(e=>e.kind==='recover');
+ assert.equal(report.events.find(e=>e.kind==='reject').after.count,0);
+ assert.equal(recovery.before.count,0);assert.equal(recovery.after.count,19);
+ assert.equal(recovery.before.targetProbability,0);assert.ok(recovery.after.targetProbability>0);
+ assert.deepEqual(recovery.answers.map(a=>a.traitId),['color:brown']);
+ assert.equal(recovery.answers[0].value,-1);
+ assert.equal(report.answers.find(h=>h.traitId==='color:brown').value,-1);
+ assert.equal(report.final.mistakeBudget,1);
+ assert.ok(report.final.ids.includes(149));assert.ok(!report.final.ids.includes(12));
+ const nodes=layoutTree(buildTree(report)).nodes;
+ assert.equal(nodes.filter(p=>p.node.kind==='recover').length,1);
+ assert.ok(nodes.some(p=>p.node.title.includes('Closest fits with 1 conflicting clue')));
+});

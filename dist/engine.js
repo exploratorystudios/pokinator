@@ -160,7 +160,7 @@ function splitKey(ids, members) {
   return parts.sort().join('|');
 }
 
-export const ENGINE_VERSION = 'deduction-v4';
+export const ENGINE_VERSION = 'deduction-v5';
 
 export class Game {
   constructor(pokemon, {random = Math.random} = {}) {
@@ -171,6 +171,7 @@ export class Game {
     this.random = random;
     this.history = [];
     this.rejected = [];
+    this.mistakeBudget = 0;
     this.logs = new Map(pokemon.map(p => [p.id, 0]));
     this.candidates = pokemon.map(p => p.id);
     this.candidateIds = new Set(this.candidates);
@@ -241,7 +242,7 @@ export class Game {
   readyForReveal(leadingId = this.ranking()[0].pokemon.id) {
     const last = this.history.at(-1);
     return Boolean(last?.finisher && this.candidateIds.has(last.targetId) &&
-      leadingId === last.targetId && (last.value > 0 || this.candidates.length === 1));
+      leadingId === last.targetId && (last.value > 0 || (last.value === 0 && this.candidates.length === 1)));
   }
   answer(value) {
     if (![-1,-.5,0,.5,1].includes(value) || !this.current) throw new Error('Invalid answer');
@@ -268,17 +269,19 @@ export class Game {
   }
   rebuild() {
     this.logs = new Map(this.pokemon.map(p => [p.id,0]));
-    let candidates = this.pokemon.map(p => p.id).filter(id => !this.rejected.includes(id));
+    const definite = this.history.filter(h => Math.abs(h.value) === 1)
+      .map(h => ({yes:h.value>0,members:this.traitById.get(h.traitId).members}));
+    const alternatives = this.pokemon.filter(p => !this.rejected.includes(p.id))
+      .map(p => ({id:p.id,errors:definite.reduce((sum,h) => sum+Number(h.members.has(p.id)!==h.yes),0)}));
+    // Edits and undo can make an exact fit possible again.
+    this.mistakeBudget = Math.min(this.mistakeBudget,Math.min(...alternatives.map(p => p.errors)));
     for (const h of this.history) {
       const trait = this.traitById.get(h.traitId);
-      // Definite answers are constraints. This carries every implication across
-      // regions, types, families, appearances, and the rest of the fact bank.
-      // Probably answers only change the ranking; unknown answers stay neutral.
-      if (Math.abs(h.value) === 1) candidates = candidates.filter(id => trait.members.has(id) === (h.value > 0));
-      this.apply(trait,h.value);
+      const subjective = this.mistakeBudget > 0 && ['color','appearance'].includes(trait.group);
+      this.apply(trait,subjective && Math.abs(h.value) === 1 ? h.value*.5 : h.value);
     }
-    this.candidates = candidates;
-    this.candidateIds = new Set(candidates);
+    this.candidates = alternatives.filter(p => p.errors <= this.mistakeBudget).map(p => p.id);
+    this.candidateIds = new Set(this.candidates);
   }
   revise(index,value) {
     if (!Number.isInteger(index) || !this.history[index] || ![-1,-.5,0,.5,1].includes(value)) throw new Error('Invalid answer revision');
@@ -301,6 +304,42 @@ export class Game {
   }
   hasConflict() {
     return this.candidates.length === 0;
+  }
+  conflictsFor(id) {
+    return this.history.flatMap((answer,index) => Math.abs(answer.value) === 1 &&
+      this.traitById.get(answer.traitId).members.has(id) !== (answer.value > 0)
+      ? [{index,traitId:answer.traitId,text:answer.text,value:answer.value}] : []);
+  }
+  recoveryPlan() {
+    if (!this.hasConflict()) return null;
+    // Compare every lead with the complete original history, rather than
+    // accumulating discarded constraints that protect an early mistaken clue.
+    let best = null;
+    for (const p of this.pokemon) {
+      if (this.rejected.includes(p.id)) continue;
+      const conflicts = this.conflictsFor(p.id);
+      let score = 0;
+      for (const h of this.history) {
+        if (!h.value) continue;
+        const trait = this.traitById.get(h.traitId);
+        const subjective = ['color','appearance'].includes(trait.group);
+        const certainty = Math.abs(h.value) === 1 && !subjective ? .94 : .73;
+        const agrees = trait.members.has(p.id) === (h.value > 0);
+        score += Math.log(agrees ? certainty : 1-certainty);
+      }
+      if (!best || conflicts.length < best.budget || (conflicts.length === best.budget && score > best.score)) {
+        best = {leadId:p.id,budget:conflicts.length,score,answers:conflicts};
+      }
+    }
+    return best?.budget ? {leadId:best.leadId,budget:best.budget,answers:best.answers} : null;
+  }
+  recover() {
+    const plan = this.recoveryPlan();
+    if (!plan) return null;
+    this.mistakeBudget = plan.budget;
+    this.rebuild();
+    this.next();
+    return plan;
   }
   knownGeneration() {
     const generations = new Set(this.pokemon.filter(p => this.candidateIds.has(p.id)).map(p => p.generation));
