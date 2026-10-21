@@ -1,6 +1,7 @@
 // Fact selection and question phrasing are separate so a learned policy can replace
 // the information-gain policy later without changing the UI or truth labels.
-import {extendedMembers, newSignatures} from './clues.js';
+import {extendedMembers, newSignatures} from './clues.js?v=colors-v1';
+import {APPEARANCE_COLORS, COLOR_LABELS} from './appearance-colors.js?v=colors-v1';
 
 const typeLines = {
   grass: ['Does it bring its own greenery wherever it goes?', 'Is it part Grass type, basically a houseplant with opinions?'],
@@ -99,10 +100,9 @@ const signatures = [
   ['sleep', [143], 'Would this enormous, round-bellied sleeper block an entire road?', 'Is it that huge blue-and-cream Pokémon who treats sleeping as a career?'],
   ['legend-bird', [144,145,146], 'Is it one of Kanto’s three legendary birds?', 'Are we dealing with the legendary Ice, Electric, or Fire bird?'],
   ['dragon-line', [147,148,149], 'Is it in the family that goes from blue serpents to an orange dragon?', 'Does its evolution family end with a friendly-looking orange dragon?'],
+  ['friendly-dragon', [149], 'Is it a friendly-looking orange dragon with a cream belly, little antennae, and surprisingly small wings?', 'Does this orange dragon have a cream belly, two little antennae, and wings that look undersized for the job?'],
   ['mew', [150,151], 'Is it one of the two famous Mew-related psychic legends?', 'Does its story involve Mew or the Pokémon created from Mew?'],
 ];
-
-const colors = {black:'black',blue:'blue',brown:'brown',gray:'gray',green:'green',pink:'pink',purple:'purple',red:'red',white:'white',yellow:'yellow'};
 
 export function buildTraits(pokemon) {
   const traits = [];
@@ -117,10 +117,10 @@ export function buildTraits(pokemon) {
     }
   };
   for (const [type, lines] of Object.entries(typeLines)) add(`type:${type}`, 'type', lines, p => p.types.includes(type), `Count either of its official types. Use its original regional appearance with current typings.`);
-  for (const color of Object.keys(colors)) add(`color:${color}`, 'color', [
-    `Would ${color} be the main crayon you reach for to draw it?`,
-    `Is its main body color ${color}? I am mentally assembling a very suspicious portrait.`,
-  ], p => p.color === color, 'Think of its usual appearance, not a shiny version. Pokédex color categories can be broad.');
+  for (const [color, label] of Object.entries(COLOR_LABELS)) add(`color:${color}`, 'color', [
+    `Would you reach for ${label} to draw a noticeable part of it? My crayons are on standby.`,
+    `Is ${label} one of its standout colors? I am assembling a very suspicious portrait.`,
+  ], p => APPEARANCE_COLORS[p.id]?.includes(color), 'Several colors can be Yes. Count prominent body colors, large markings, wings, shells, and other standout features, but not tiny details like eyes. White includes cream, brown includes tan, gray includes silver, and yellow includes gold. Think of its usual non-shiny, original regional appearance. If a shade is hard to call, Probably or Not sure is fine.');
   for (const [id, members, ...lines] of [...signatures, ...newSignatures]) {
     const ids = new Set([...members, ...(extendedMembers[id] || [])]);
     add(id, 'appearance', lines, p => ids.has(p.id), 'Think of its original regional appearance, not a shiny, Mega, or alternate form. “Not sure” is fine.', true);
@@ -160,7 +160,7 @@ function splitKey(ids, members) {
   return parts.sort().join('|');
 }
 
-export const ENGINE_VERSION = 'deduction-v5';
+export const ENGINE_VERSION = 'deduction-v6';
 
 export class Game {
   constructor(pokemon, {random = Math.random} = {}) {

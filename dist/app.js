@@ -1,4 +1,4 @@
-import {Game, ENGINE_VERSION} from './engine.js?v=recovery-v1';
+import {Game, ENGINE_VERSION} from './engine.js?v=colors-v1';
 import {ROSTER_SIZE, ROSTER_ID, REGIONS, filterRoster, validRoster} from './config.js';
 import {RunRecorder, saveReport, clearReports} from './report-data.js?v=recovery-v1';
 

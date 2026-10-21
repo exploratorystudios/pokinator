@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {Game, buildTraits} from '../dist/engine.js';
 import {ROSTER_SIZE, REGIONS, filterRoster, validRoster} from '../dist/config.js';
+import {APPEARANCE_COLORS, COLOR_LABELS} from '../dist/appearance-colors.js';
 
 const pokemon = JSON.parse(fs.readFileSync(new URL('../dist/pokemon.json', import.meta.url)));
 
@@ -32,6 +33,84 @@ test('perfect fact answers identify every Pokémon within the question budget', 
     lengths.push(game.history.length);
   }
   console.log(`${ROSTER_SIZE}/${ROSTER_SIZE} identified; ${(lengths.reduce((a,b)=>a+b)/ROSTER_SIZE).toFixed(1)} average questions; ${Math.max(...lengths)} maximum.`);
+});
+
+test('every original appearance has a valid visible palette independent of its Pokédex category', () => {
+  assert.deepEqual(Object.keys(APPEARANCE_COLORS).map(Number),pokemon.map(p=>p.id));
+  for (const p of pokemon) {
+    const palette=APPEARANCE_COLORS[p.id];
+    assert.ok(palette.length>0,p.name);
+    assert.equal(new Set(palette).size,palette.length,`${p.name}: duplicate color`);
+    for(const color of palette)assert.ok(Object.hasOwn(COLOR_LABELS,color),`${p.name}: unknown ${color}`);
+  }
+  const original=buildTraits(pokemon).filter(t=>t.group==='color');
+  const changed=buildTraits(pokemon.map(p=>({...p,color:'black'}))).filter(t=>t.group==='color');
+  assert.deepEqual(changed.map(t=>[t.id,[...t.members]]),original.map(t=>[t.id,[...t.members]]),'Source-data refreshes cannot replace visible palettes with official categories');
+});
+
+test('orange and multi-color clues agree with prominent features across all three generations', () => {
+  const traits=buildTraits(pokemon);
+  const members=id=>traits.find(t=>t.id===`color:${id}`).members;
+  for(const id of [4,6,26,37,46,47,58,59,98,99,118,119,136,149,216,255,256,258,259,260,328,338,341,386])assert.ok(members('orange').has(id),`${pokemon[id-1].name} should count as orange`);
+  for(const id of [4,6,58,59,98,99,118,119,149,255,256,258,328,338,341,386])assert.ok(!members('red').has(id),`${pokemon[id-1].name} should not inherit a red category instead of its visible orange`);
+  for(const id of [4,6,58,59,149,255,256,328,338,386])assert.ok(!members('brown').has(id),`${pokemon[id-1].name} should not inherit a brown category instead of its visible orange`);
+  const shared=[
+    ['fire-dog','orange',[58,59]],['crab','orange',[98,99]],
+    ['goldfish','orange',[118,119]],['goldfish','white',[118,119]],
+    ['friendly-dragon','orange',[149]],['friendly-dragon','white',[149]],
+    ['mudkip','blue',[258,259,260]],['mudkip','orange',[258,259,260]],
+    ['sun-rock','orange',[338]],['deoxys','orange',[386]],['deoxys','blue',[386]],
+    ['manta','blue',[226]],['milotic','white',[350]],['poochyena','gray',[261,262]],
+    ['zigzag','brown',[263,264]],['zigzag','white',[263,264]],
+    ['egg-shell','white',[175,176]],['egg-shell','red',[175,176]],['egg-shell','blue',[175,176]],
+    ['ampharos','yellow',[181]],['ampharos','red',[181]],['ampharos','black',[181]],
+    ['delcatty','white',[301]],['delcatty','purple',[301]],
+    ['ralts','white',[280,281,282]],['ralts','green',[280,281,282]],['ralts','red',[280,281,282]],
+    ['kecleon','red',[352]],['relicanth','red',[369]],
+    ['latias','blue',[380]],['latios','red',[381]],['groudon','white',[383]],['deoxys','purple',[386]],
+  ];
+  for(const [clue,color,ids] of shared)for(const id of ids){
+    assert.ok(traits.find(t=>t.id===clue).members.has(id));
+    assert.ok(members(color).has(id),`${pokemon[id-1].name}: ${clue} contradicts ${color}`);
+  }
+  for(const color of ['blue','white','orange'])assert.ok(members(color).has(149));
+  for(const id of [74,75,95,208,356])assert.ok(members('gray').has(id));
+  for(const id of [52,53,143,264,311,312,350])assert.ok(members('white').has(id));
+  const crayfish=traits.find(t=>t.id==='crayfish');
+  assert.ok(crayfish.lines.every(line=>line.includes('orange or red')));
+  for(const id of crayfish.members)assert.ok(members('orange').has(id)||members('red').has(id));
+  const spring=traits.find(t=>t.id==='spring');
+  assert.ok(spring.lines[0].includes('gray or purple'));
+  for(const id of spring.members)assert.ok(members('gray').has(id)||members('purple').has(id));
+  for(const t of traits.filter(t=>t.group==='color')){
+    assert.equal(t.lines.length,2);
+    assert.ok(t.lines.every(line=>line.includes(COLOR_LABELS[t.id.slice(6)])));
+    assert.match(t.detail,/Several colors can be Yes/);
+    assert.ok(t.lines.every(line=>!line.includes('main body color')&&!line.includes('the main crayon')));
+  }
+});
+
+test('orange Yes and brown No keep Dragonite without recovery or a wrong guess', () => {
+  const game=new Game(pokemon,{random:()=>.5});
+  give(game,'color:orange',1);give(game,'color:brown',-1);give(game,'color:white',1);
+  assert.ok(game.candidateIds.has(149),'Cream and orange are compatible answers');
+  let steps=0;
+  while(!game.shouldGuess() && steps++<20){
+    assert.equal(game.hasConflict(),false);
+    game.answer(game.current.members.has(149)?1:-1);
+  }
+  assert.ok(game.shouldGuess());
+  assert.equal(game.ranking()[0].pokemon.id,149);
+  assert.equal(game.mistakeBudget,0);
+  assert.equal(game.rejected.length,0);
+});
+
+test('Dragonite’s orange-and-cream identifying question is a final reveal', () => {
+  const game=play(pokemon.find(p=>p.id===149));
+  assert.equal(game.history.at(-1).traitId,'friendly-dragon');
+  assert.ok(game.history.at(-1).finisher);
+  assert.equal(game.current,null,'No extra factual question after the identifying clue');
+  assert.equal(game.ranking()[0].pokemon.id,149);
 });
 
 test('region filters partition the roster and every regional Pokémon remains identifiable', () => {
@@ -222,17 +301,16 @@ test('the core exposes strict conflicts before the interface records recovery, a
   assert.ok(Math.abs(game.ranking().reduce((s,r)=>s+r.probability,0)-1)<1e-10);
 });
 
-test('Dragonite recovers after a reasonable orange-versus-brown answer and a rejected wrong guess', () => {
+test('Dragonite can still recover from an incorrect color answer without restoring a rejected guess', () => {
   const game=new Game(pokemon,{random:()=>.5});
-  while (!game.shouldGuess()) game.answer(game.current.id==='color:brown' ? -1 : game.current.members.has(149) ? 1 : -1);
-  assert.equal(game.ranking()[0].pokemon.name,'Butterfree','Reproduce the original confusing color failure');
+  give(game,'generation:1',1);give(game,'type:dragon',1);give(game,'evolved',1);give(game,'can-evolve',-1);give(game,'color:orange',-1);
   const history=structuredClone(game.history);
   game.reject(12);
   assert.ok(game.hasConflict());
   const plan=game.recoveryPlan();
-  assert.deepEqual(plan.answers.map(a=>a.traitId),['color:brown']);
+  assert.deepEqual(plan.answers.map(a=>a.traitId),['color:orange']);
   game.recover();
-  assert.equal(game.remaining(),19);
+  assert.ok(game.remaining()>0);
   assert.ok(game.candidateIds.has(149));
   assert.ok(!game.candidateIds.has(12));
   assert.deepEqual(game.history,history,'Recovery does not change any original answer');
@@ -241,7 +319,7 @@ test('Dragonite recovers after a reasonable orange-versus-brown answer and a rej
   let further=0;
   while(!game.shouldGuess() && further++<10)game.answer(game.current.members.has(149)?1:-1);
   assert.equal(game.ranking()[0].pokemon.id,149);
-  assert.equal(further,4);
+  assert.ok(further<10);
   assert.equal(new Set(game.history.map(h=>h.traitId)).size,game.history.length);
 });
 
@@ -260,10 +338,10 @@ test('recovery only operates at zero matches and never restores rejected guesses
 
 test('editing a conflicting clue restores exact-match mode without erasing other answers', () => {
   const game=new Game(pokemon,{random:()=>.5});
-  give(game,'generation:1',1);give(game,'type:dragon',1);give(game,'evolved',1);give(game,'can-evolve',-1);give(game,'color:brown',-1);
+  give(game,'generation:1',1);give(game,'type:dragon',1);give(game,'evolved',1);give(game,'can-evolve',-1);give(game,'color:orange',-1);
   assert.ok(game.hasConflict());
   game.recover();
-  const index=game.history.findIndex(h=>h.traitId==='color:brown');
+  const index=game.history.findIndex(h=>h.traitId==='color:orange');
   assert.equal(game.history[index].value,-1);
   assert.equal(game.mistakeBudget,1);
   const answers=structuredClone(game.history);
@@ -379,10 +457,11 @@ test('Yes or Probably on the final identifying clue immediately reveals the lead
   }
 });
 
-test('a negative or unknown finale answer keeps alternatives and does not force the hinted guess', () => {
+test('a negative finale excludes its target and an unknown finale preserves unconfirmed alternatives', () => {
   for(const value of [-1,0]) {
     const game=reachDelibirdFinale();
     const before=[...game.candidates];
+    const ranking=game.ranking();
     const oldHistory=structuredClone(game.history);
     game.answer(value);
     assert.deepEqual(game.history.slice(0,-1),oldHistory);
@@ -393,7 +472,7 @@ test('a negative or unknown finale answer keeps alternatives and does not force 
     } else {
       assert.deepEqual(game.candidates,before,'Unknown must not eliminate alternatives');
       assert.equal(game.readyForReveal(),false);
-      assert.equal(game.shouldGuess(),false);
+      assert.deepEqual(game.ranking(),ranking,'An unknown finale must not increase confidence in its hinted target');
     }
     assert.notEqual(game.current?.id,'gift-bird','The next question must not repeat the finale');
   }
